@@ -1,0 +1,33 @@
+# language: "en-US"
+
+# CodeRabbit Configuration
+# Copy this file to the root of any new project as .coderabbit.yaml
+
+reviews:
+  profile: "chill"           # chill | assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false             # set true to also review draft PRs
+  path_filters:
+    - "!**/*.lock"
+    - "!**/node_modules/**"
+    - "!**/__pycache__/**"
+    - "!**/dist/**"
+    - "!**/build/**"
+  path_instructions:
+    - path: "**/*.py"
+      instructions: "Follow PEP8. Prefer explicit over implicit. Add type hints."
+    - path: "**/*.js"
+      instructions: "Use ES2020+. Prefer const/let. Add JSDoc for public functions."
+    - path: "**/*.ts"
+      instructions: "Strict TypeScript. No any. Document public APIs."
+    - path: "**/*.md"
+      instructions: "Check for clarity, correct links, and proper formatting."
+
+chat:
+  auto_reply: true

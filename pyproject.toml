@@ -27,3 +27,6 @@ include = ["cbom_compass*"]
 
 [tool.setuptools.package-data]
 cbom_compass = ["web/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
