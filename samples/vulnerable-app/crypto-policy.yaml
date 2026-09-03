@@ -1,0 +1,61 @@
+# CBOM Compass policy — the human-owned inputs from PRD section 6.3.
+#
+# X (data lifetime) and business criticality cannot be discovered by any
+# scanner; they are business facts. Keeping them in a checked-in file means the
+# tagging is reviewed the same way code is, rather than trapped in a database.
+
+scoring:
+  # Z is an estimate, not a fact. Change it and every score recomputes.
+  z_year: 2031
+  urgency_scale: 10.0
+  default_criticality: medium
+  criticality_weights:
+    low: 0.4
+    medium: 0.7
+    high: 1.0
+
+compliance:
+  # Whether this organisation is subject to CNSA 2.0. Drives parameter-set
+  # selection (ML-KEM-1024 / ML-DSA-87) and the AES-256 / SHA-384 step-up.
+  cnsa2_required: false
+
+scanning:
+  # Section 10: live probing outside this list is refused, not warned about.
+  allowlist:
+    - localhost
+    - 127.0.0.1
+    - "*.test.internal"
+  authorization_attestation: >-
+    Demo environment only. Approved by the CBOM Compass team for SIH25164
+    judging; no production hosts are in scope.
+
+services:
+  - name: payment-gateway
+    paths: ["src/payments.py*", "*/payments.py*"]
+    data_class: financial      # X = 7y
+    criticality: high
+    surface: public-api        # Y = 2y
+
+  - name: session-service
+    paths: ["src/sessions.py*", "*/sessions.py*"]
+    data_class: ephemeral      # X = 0.1y
+    criticality: medium
+    surface: internal-service  # Y = 0.5y
+
+  - name: token-service
+    paths: ["java/*", "*/TokenService.java*"]
+    data_class: pii            # X = 10y
+    criticality: high
+    surface: public-api
+
+  - name: web-auth
+    paths: ["js/*", "*/auth.js*"]
+    data_class: pii
+    criticality: medium
+    surface: public-api
+
+  - name: build-dependencies
+    paths: ["requirements.txt", "package.json", "pom.xml", "go.mod"]
+    data_class: operational    # X = 3y
+    criticality: low
+    surface: containerised

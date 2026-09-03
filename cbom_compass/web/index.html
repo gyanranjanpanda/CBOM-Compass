@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CBOM Compass</title>
+<style>
+:root{
+  --bg:#0d1216; --panel:#141b21; --panel-2:#18212a; --line:#243039; --line-soft:#1c252d;
+  --ink:#d9e2e8; --ink-dim:#8497a3; --ink-faint:#5d6f7c;
+  --accent:#48cfc0; --accent-dim:#2b7a73;
+  --broken:#ff6058; --deprecated:#f0a63c; --adequate:#4fbf7f; --na:#66798a; --unknown:#9b7fd4;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 var(--sans);}
+a{color:var(--accent)}
+header{display:flex;align-items:center;gap:18px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:20;flex-wrap:wrap}
+.brand{font-weight:600;letter-spacing:.02em;display:flex;align-items:center;gap:8px}
+.brand .mark{color:var(--accent);font-size:15px}
+.brand small{color:var(--ink-faint);font-weight:400;font-family:var(--mono);font-size:11px}
+nav{display:flex;gap:2px;margin-left:auto;flex-wrap:wrap}
+nav button{background:none;border:1px solid transparent;color:var(--ink-dim);padding:5px 11px;border-radius:5px;cursor:pointer;font:inherit}
+nav button:hover{color:var(--ink);background:var(--panel-2)}
+nav button.on{color:var(--bg);background:var(--accent);font-weight:600}
+nav button:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Z is a dial, never a fact -- PRD 8.1: visible on every risk view. */
+.zbar{display:flex;align-items:center;gap:12px;padding:9px 18px;background:linear-gradient(90deg,var(--panel-2),var(--panel));border-bottom:1px solid var(--line);position:sticky;top:47px;z-index:19;flex-wrap:wrap}
+.zbar label{color:var(--ink-dim);font-size:12px;display:flex;align-items:center;gap:7px}
+.zbar input[type=range]{width:230px;accent-color:var(--accent)}
+.zval{font-family:var(--mono);color:var(--accent);font-weight:600;font-size:15px;min-width:44px}
+.zwarn{color:var(--ink-faint);font-size:11px;font-style:italic}
+.fixed-clock{margin-left:auto;font-size:11px;color:var(--ink-faint);font-family:var(--mono);border-left:1px solid var(--line);padding-left:14px}
+.fixed-clock b{color:var(--deprecated);font-weight:600}
+
+main{padding:18px;max-width:1560px;margin:0 auto}
+.view{display:none} .view.on{display:block}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-dim);margin:0 0 10px;font-weight:600}
+.sub{color:var(--ink-faint);font-size:12px;margin:-6px 0 14px}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin-bottom:20px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:12px 14px}
+.kpi .n{font-size:26px;font-weight:600;font-family:var(--mono);line-height:1.1}
+.kpi .l{color:var(--ink-dim);font-size:11px;margin-top:3px}
+.kpi .note{color:var(--ink-faint);font-size:10.5px;margin-top:5px;font-family:var(--mono)}
+.kpi.broken .n{color:var(--broken)} .kpi.deprecated .n{color:var(--deprecated)}
+.kpi.adequate .n{color:var(--adequate)} .kpi.hndl .n{color:var(--broken)}
+.kpi.reg .n{color:var(--deprecated)}
+
+.grid2{display:grid;grid-template-columns:minmax(340px,.85fr) 1.15fr;gap:16px;align-items:start}
+@media(max-width:1080px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:14px}
+.card h3{margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-dim)}
+.card .hint{color:var(--ink-faint);font-size:11px;margin:0 0 12px}
+
+/* Severity always pairs colour with an icon and a word -- never colour alone. */
+.pill{display:inline-flex;align-items:center;gap:5px;padding:1.5px 7px;border-radius:11px;font-size:11px;font-family:var(--mono);border:1px solid;white-space:nowrap}
+.pill .ic{font-weight:700;font-size:10px}
+.s-broken{color:var(--broken);border-color:#4a2320;background:#2a1614}
+.s-broken_classical{color:var(--broken);border-color:#4a2320;background:#2a1614}
+.s-deprecated_insufficient{color:var(--deprecated);border-color:#4a3a1c;background:#2a2113}
+.s-adequate{color:var(--adequate);border-color:#1f4230;background:#12271c}
+.s-not_applicable{color:var(--na);border-color:#2a343c;background:#1a2128}
+.s-unknown{color:var(--unknown);border-color:#37305a;background:#1f1b33}
+.c-high{color:var(--adequate)} .c-medium{color:var(--deprecated)} .c-low{color:var(--broken)}
+.crit-high{color:var(--broken);font-weight:600}.crit-medium{color:var(--deprecated)}.crit-low{color:var(--ink-faint)}
+
+table{width:100%;border-collapse:collapse;font-size:12px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:7px;background:var(--panel)}
+th{text-align:left;padding:8px 10px;color:var(--ink-dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none;position:sticky;top:0;background:var(--panel)}
+th:hover{color:var(--ink)}
+td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--panel-2)}
+.mono{font-family:var(--mono)}
+.loc{font-family:var(--mono);color:var(--ink-dim);font-size:11px;max-width:290px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block}
+.score{font-family:var(--mono);font-weight:600;cursor:pointer;border-bottom:1px dotted var(--ink-faint)}
+.score:hover{color:var(--accent);border-bottom-color:var(--accent)}
+.bang{color:var(--broken);font-weight:700;cursor:help}
+
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+input,select{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);padding:5px 9px;border-radius:5px;font:inherit}
+input[type=search]{min-width:230px;font-family:var(--mono);font-size:12px}
+button.btn{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);padding:5px 11px;border-radius:5px;cursor:pointer;font:inherit}
+button.btn:hover{border-color:var(--accent);color:var(--accent)}
+button.btn.primary{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:600}
+.chip{background:var(--panel-2);border:1px solid var(--accent-dim);color:var(--accent);padding:2.5px 9px;border-radius:11px;font-size:11px;font-family:var(--mono);display:inline-flex;gap:6px;align-items:center}
+.chip button{background:none;border:0;color:inherit;cursor:pointer;padding:0;font-size:13px;line-height:1}
+
+/* heat map */
+.heat{border-collapse:separate;border-spacing:4px}
+.heat td,.heat th{padding:0;border:0}
+.heat th{background:none;position:static;font-size:10.5px;color:var(--ink-faint);text-align:center;padding-bottom:3px;cursor:default}
+.heat th.rh{text-align:right;padding-right:8px;white-space:nowrap}
+.cell{width:100%;min-width:76px;min-height:66px;padding:9px 5px;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;transition:transform .08s}
+.cell:hover{transform:scale(1.04);border-color:var(--accent)}
+.cell .n{font-size:19px;font-weight:600;font-family:var(--mono);line-height:1.1}
+.cell .t{font-size:9.5px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;line-height:1}
+.cell.z0{opacity:.34}
+
+/* explainer + detail panels */
+.panel{position:fixed;top:0;right:0;width:min(560px,94vw);height:100vh;background:var(--panel);border-left:1px solid var(--line);padding:18px;overflow-y:auto;z-index:40;box-shadow:-14px 0 40px #0008;display:none}
+.panel.on{display:block}
+.panel h3{margin:0 0 3px;font-size:15px;font-family:var(--mono)}
+.panel .close{position:absolute;top:14px;right:16px;background:none;border:0;color:var(--ink-dim);font-size:19px;cursor:pointer}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:12px;margin:12px 0}
+.kv dt{color:var(--ink-dim)} .kv dd{margin:0;font-family:var(--mono)}
+.formula{background:#0a0f13;border:1px solid var(--line);border-radius:6px;padding:11px;font-family:var(--mono);font-size:11.5px;line-height:1.75;overflow-x:auto;white-space:pre}
+.formula .hl{color:var(--accent)} .formula .cm{color:var(--ink-faint)}
+.badge{font-size:10px;font-family:var(--mono);padding:1px 5px;border-radius:3px;border:1px solid var(--line);color:var(--ink-faint);margin-left:5px}
+.badge.assumed{color:var(--deprecated);border-color:#4a3a1c;background:#251d10}
+.badge.tagged{color:var(--adequate);border-color:#1f4230;background:#12271c}
+.ev{border-left:2px solid var(--line);padding:7px 0 7px 11px;margin:9px 0;font-size:11.5px}
+.ev .m{font-family:var(--mono);color:var(--accent);font-size:11px}
+.ev .s{color:var(--ink-dim);font-family:var(--mono);margin-top:3px;word-break:break-all}
+.rationale{background:var(--panel-2);border-left:2px solid var(--accent-dim);padding:9px 12px;border-radius:0 5px 5px 0;font-size:12px;line-height:1.6;margin:11px 0;color:var(--ink)}
+.timeline{margin:14px 0}
+.tl{position:relative;height:30px;background:var(--panel-2);border-radius:5px;border:1px solid var(--line);overflow:hidden}
+.tl .seg{position:absolute;top:0;height:100%;display:flex;align-items:center;justify-content:center;font-size:10px;font-family:var(--mono)}
+.tl .xy{background:linear-gradient(90deg,#3a2a5c,#5c3a4a);color:#e8d5e8}
+.tl .zmark{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--accent);z-index:2}
+.tl .expo{background:repeating-linear-gradient(45deg,#4a201e,#4a201e 5px,#3a1917 5px,#3a1917 10px);border-left:1px solid var(--broken)}
+.tllab{display:flex;justify-content:space-between;font-size:10px;color:var(--ink-faint);font-family:var(--mono);margin-top:4px}
+
+.note{background:#1a2128;border:1px solid var(--line);border-radius:6px;padding:11px 13px;font-size:11.5px;color:var(--ink-dim);line-height:1.65;margin:12px 0}
+.note b{color:var(--ink)}
+.empty{text-align:center;padding:70px 20px;color:var(--ink-dim)}
+.empty h3{font-size:17px;color:var(--ink);margin:0 0 8px;font-family:var(--sans);text-transform:none;letter-spacing:0}
+.empty code{background:var(--panel-2);padding:2px 7px;border-radius:4px;font-family:var(--mono);color:var(--accent);font-size:12px}
+.err{background:#2a1614;border:1px solid #4a2320;color:#ffb0aa;padding:9px 12px;border-radius:6px;font-size:11.5px;margin-bottom:9px;font-family:var(--mono)}
+.errs{margin:14px 0}
+#graph{width:100%;height:600px;background:var(--panel);border:1px solid var(--line);border-radius:7px;display:block;cursor:grab}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--ink-dim);margin-top:9px}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.rec{border:1px solid var(--line);border-radius:7px;padding:13px;margin-bottom:10px;background:var(--panel)}
+.rec .top{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+.rec .std{font-family:var(--mono);color:var(--accent);font-weight:600}
+.rec .why{color:var(--ink-dim);font-size:11.5px;margin-top:7px;line-height:1.6}
+.rec ul{margin:8px 0 0;padding-left:17px;color:var(--ink-faint);font-size:11px;line-height:1.6}
+.mat-draft{color:var(--deprecated);border-color:#4a3a1c}
+.mat-final{color:var(--adequate);border-color:#1f4230}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="mark">◈</span> CBOM Compass <small id="scanid">no scan</small></div>
+  <nav>
+    <button data-v="overview" class="on">Overview</button>
+    <button data-v="inventory">Inventory</button>
+    <button data-v="heat">Risk heat map</button>
+    <button data-v="graph">Asset graph</button>
+    <button data-v="recs">Recommendations</button>
+    <button data-v="reports">Reports</button>
+    <button data-v="settings">Settings</button>
+  </nav>
+</header>
+
+<div class="zbar">
+  <label for="z">Q-Day estimate&nbsp;<b>Z</b></label>
+  <input type="range" id="z" min="2028" max="2050" value="2035" step="1">
+  <span class="zval" id="zval">2035</span>
+  <span class="zwarn">an estimate you set — not a prediction this tool makes</span>
+  <span id="zeffect" class="zwarn" style="color:var(--accent);font-style:normal;font-family:var(--mono)"></span>
+  <span class="fixed-clock">fixed clock: NIST IR 8547 deprecates RSA/ECC <b>2030</b> · disallows <b>2035</b></span>
+</div>
+
+<main>
+  <!-- OVERVIEW -->
+  <section class="view on" id="v-overview">
+    <div id="kpis" class="kpis"></div>
+    <div id="errs" class="errs"></div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Risk heat map</h3>
+        <p class="hint">Criticality × urgency. Click a cell to filter the inventory.</p>
+        <div id="heat-mini"></div>
+      </div>
+      <div class="card">
+        <h3>Most urgent</h3>
+        <p class="hint">Click any score to see the Mosca inputs behind it.</p>
+        <div class="tablewrap"><table id="top10"></table></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3>Drift since last scan</h3>
+      <p class="hint">Re-scans are diffed, not re-listed.</p>
+      <div id="drift"></div>
+    </div>
+  </section>
+
+  <!-- INVENTORY -->
+  <section class="view" id="v-inventory">
+    <h2>Inventory explorer</h2>
+    <p class="sub">Every discovered cryptographic asset, de-duplicated across sources. Click a row for evidence.</p>
+    <div class="filters">
+      <input type="search" id="q" placeholder="search algorithm, location, library…">
+      <select id="f-status"><option value="">all statuses</option></select>
+      <select id="f-source"><option value="">all sources</option></select>
+      <select id="f-crit"><option value="">all criticality</option></select>
+      <select id="f-conf"><option value="">all confidence</option></select>
+      <span id="chips"></span>
+      <button class="btn" id="clearf">clear</button>
+      <span style="margin-left:auto;color:var(--ink-faint);font-size:11.5px" id="count"></span>
+    </div>
+    <div class="tablewrap"><table id="inv"></table></div>
+  </section>
+
+  <!-- HEAT -->
+  <section class="view" id="v-heat">
+    <h2>Risk heat map</h2>
+    <p class="sub">Move the Z slider above and watch the grid recompute. Nothing here is stale.</p>
+    <div class="grid2">
+      <div class="card"><div id="heat-full"></div></div>
+      <div class="card">
+        <h3>What the bands mean</h3>
+        <p class="hint">Urgency is the priority score, which is not the same as the Mosca test alone.</p>
+        <div class="formula"><span class="cm"># timing modulates a need to migrate —</span>
+<span class="cm"># it never creates one</span>
+exposure_gap  = (X + Y) − Z_years
+urgency       = clamp(gap / <span class="hl">SCALE</span>, 0, 1)
+compliance    = nearness of the NIST deadline
+vulnerability = 1.0 broken · 0.8 deprecated
+                0.3 policy-only · <span class="hl">0.0 adequate</span>
+timing        = max(urgency, compliance, <span class="hl">FLOOR</span>)
+<span class="hl">risk</span>          = vulnerability × timing
+                × (0.6 + 0.4 × hndl)
+<span class="hl">score</span>         = risk × criticality_weight</div>
+        <div class="note" id="zpin"></div>
+        <div class="note"><b>Why multiply rather than take a max?</b> Scanning paramiko,
+        an earlier version scored its already-migrated <b>ML-KEM key exchange at 0.60</b>
+        — purely because SSH session keys protect long-lived access. Nothing needed
+        migrating, so no timeline should have made it urgent. Vulnerability now gates
+        everything: adequate algorithms score zero whatever their data lifetime.</div>
+        <div class="note"><b>Why the floor?</b> 3DES protecting session data is still worth
+        replacing, so timing never drops to zero and weak cryptography always registers.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- GRAPH -->
+  <section class="view" id="v-graph">
+    <h2>Asset graph</h2>
+    <p class="sub">Blast radius: which assets does a break here cascade to? Drag to pan, scroll to zoom, click a node for detail.</p>
+    <canvas id="graph"></canvas>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--broken)"></i> broken</span>
+      <span><i class="dot" style="background:var(--deprecated)"></i> deprecated</span>
+      <span><i class="dot" style="background:var(--adequate)"></i> adequate</span>
+      <span><i class="dot" style="background:var(--na)"></i> library entry</span>
+      <span><i class="dot" style="background:transparent;border:1.5px dashed var(--ink-dim)"></i> cluster (click to open)</span>
+      <span style="margin-left:auto" id="graphinfo"></span>
+    </div>
+  </section>
+
+  <!-- RECOMMENDATIONS -->
+  <section class="view" id="v-recs">
+    <h2>Recommendations</h2>
+    <p class="sub">Named standards, sequenced by priority. Hybrid by default so a break in either algorithm alone is survivable.</p>
+    <div class="filters">
+      <select id="r-filter">
+        <option value="action">needs action</option>
+        <option value="all">everything</option>
+        <option value="nochange">no change needed</option>
+      </select>
+      <span style="color:var(--ink-faint);font-size:11.5px" id="reccount"></span>
+    </div>
+    <div id="recs"></div>
+  </section>
+
+  <!-- REPORTS -->
+  <section class="view" id="v-reports">
+    <h2>Reports and export</h2>
+    <p class="sub">Exports respect the inventory filters, so you can export exactly "broken and high criticality".</p>
+    <div class="grid2">
+      <div class="card">
+        <h3>Export</h3>
+        <p class="hint">Current filter scope is applied.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn primary" id="dl-cbom">CycloneDX 1.7 CBOM</button>
+          <button class="btn" id="dl-pdf">PDF risk summary</button>
+          <button class="btn" id="dl-csv">CSV</button>
+        </div>
+        <div id="exportscope" class="note"></div>
+      </div>
+      <div class="card">
+        <h3>Standard conformance</h3>
+        <p class="hint">Validated against the fields and enumerations CycloneDX 1.7 requires.</p>
+        <div id="validation"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3>Scan history</h3>
+      <p class="hint">Every scan is retained, so drift is a diff rather than a fresh list.</p>
+      <div id="scans"></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="view" id="v-settings">
+    <h2>Settings</h2>
+    <p class="sub">Z, criticality weights and the scan allowlist change every score in the system, so they are risk-officer-only and audit-logged.</p>
+    <div class="grid2">
+      <div class="card">
+        <h3>Scoring</h3>
+        <div id="polform"></div>
+      </div>
+      <div class="card">
+        <h3>Service tags</h3>
+        <p class="hint">Where X and business criticality come from. No scanner can discover these.</p>
+        <div id="services"></div>
+      </div>
+    </div>
+    <div class="grid2" style="margin-top:16px">
+      <div class="card">
+        <h3>Scan authorization</h3>
+        <p class="hint">Live probing outside this allowlist is refused, not warned about.</p>
+        <div id="allowlist"></div>
+      </div>
+      <div class="card">
+        <h3>Audit log</h3>
+        <p class="hint">Exports are the primary exfiltration path for this data.</p>
+        <div id="audit"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="panel" id="panel"><button class="close" id="pclose" aria-label="close">×</button><div id="pbody"></div></div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const ICON={broken:'✕',broken_classical:'✕',deprecated_insufficient:'▲',adequate:'✓',not_applicable:'·',unknown:'?'};
+const LABEL={broken:'broken',broken_classical:'broken (classical)',deprecated_insufficient:'deprecated',adequate:'adequate',not_applicable:'library entry',unknown:'unknown'};
+const COLOR={broken:'#ff6058',broken_classical:'#ff6058',deprecated_insufficient:'#f0a63c',adequate:'#4fbf7f',not_applicable:'#66798a',unknown:'#9b7fd4'};
+let REPORT=null, FILTERS={q:'',status:'',source:'',crit:'',conf:''}, SORT={k:'score',d:-1}, Z=2035;
+
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pill=s=>`<span class="pill s-${s}"><span class="ic">${ICON[s]||'?'}</span>${LABEL[s]||s}</span>`;
+
+async function load(z){
+  const r=await fetch('/api/report'+(z?`?z=${z}`:''));
+  if(r.status===404){renderEmpty();return null}
+  REPORT=await r.json();
+  Z=REPORT.policy.z_year; $('#z').value=Z; $('#zval').textContent=Z;
+  $('#scanid').textContent='scan '+REPORT.run.scan_id;
+  $('#zeffect').textContent=`${REPORT.kpis.z_sensitive}/${REPORT.kpis.total_assets} scores move with Z`;
+  renderAll(); return REPORT;
+}
+
+function renderEmpty(){
+  $('main').innerHTML=`<div class="empty"><h3>No scan yet</h3>
+  <p>Point CBOM Compass at a repository, container image, or endpoint.</p>
+  <p style="margin-top:18px"><code>cbom-compass scan ./your-repo --policy crypto-policy.yaml</code></p>
+  <p style="margin-top:22px;font-size:12px">Or try the bundled sample environment:</p>
+  <p><code>cbom-compass scan samples/vulnerable-app --policy samples/vulnerable-app/crypto-policy.yaml</code></p></div>`;
+}
+
+function renderAll(){renderKPIs();renderZPin();renderErrors();renderHeat('#heat-mini',true);renderHeat('#heat-full',false);renderTop10();renderInventory();renderRecs();renderDrift();G.loaded=false;}
+
+function renderKPIs(){
+  const k=REPORT.kpis, s=k.by_status||{};
+  const broken=(s.broken||0)+(s.broken_classical||0);
+  const cards=[
+    ['',k.total_assets,'assets inventoried',`${k.raw_findings} raw · ${k.collapsed_by_dedup} de-duplicated`],
+    ['broken',broken,'broken',`Shor-broken + classically broken`],
+    ['deprecated',s.deprecated_insufficient||0,'deprecated / insufficient','weak on classical grounds'],
+    ['adequate',s.adequate||0,'adequate','incl. AES-128 and SHA-256'],
+    ['hndl',k.hndl_flagged,'harvest-now-decrypt-later','recordable today, decryptable later'],
+    ['reg',k.nist_disallowed_2035,'disallowed after 2035','NIST IR 8547 — a fixed date'],
+    ['reg',k.nist_deprecated_2030,'deprecated after 2030','NIST IR 8547 — a fixed date'],
+    ['',k.z_sensitive,'scores driven by Z',`${k.total_assets-k.z_sensitive} pinned by regulation or a break`],
+  ];
+  $('#kpis').innerHTML=cards.map(([c,n,l,note])=>
+    `<div class="kpi ${c}"><div class="n">${n}</div><div class="l">${l}</div><div class="note">${note}</div></div>`).join('');
+}
+
+function renderErrors(){
+  const e=REPORT.errors||[];
+  $('#errs').innerHTML=e.length?e.map(x=>`<div class="err"><b>[${esc(x.source_type)}]</b> ${esc(x.target)} — ${esc(x.message)}</div>`).join(''):'';
+}
+
+function renderZPin(){
+  const k=REPORT.kpis, d=k.by_driver||{};
+  const pinned=(d.compliance||0)+(d.quantum||0);
+  const el=$('#zpin'); if(!el)return;
+  el.innerHTML=`<b>Z moves ${k.z_sensitive} of ${k.total_assets} scores.</b> The other ${pinned} are pinned:
+    ${d.compliance||0} by the fixed NIST IR 8547 dates and ${d.quantum||0} by an outright break.
+    That is the point of scoring both clocks — an RSA key is on a regulator's calendar whether or not
+    you believe in Q-Day, so its priority does not depend on an estimate.`;
+}
+function renderHeat(sel,mini){
+  const h=REPORT.heat_map, rows=['high','medium','low'], cols=['low','medium','high'];
+  let max=1; rows.forEach(r=>cols.forEach(c=>max=Math.max(max,h[r][c])));
+  let t=`<table class="heat"><tr><th></th>${cols.map(c=>`<th>${c} urgency</th>`).join('')}</tr>`;
+  rows.forEach(r=>{
+    t+=`<tr><th class="rh">${r} criticality</th>`;
+    cols.forEach(c=>{
+      const n=h[r][c], sev=c==='high'?'--broken':c==='medium'?'--deprecated':'--adequate';
+      const a=n?(0.14+0.5*(n/max)):0;
+      t+=`<td><div class="cell ${n?'':'z0'}" data-crit="${r}" data-urg="${c}"
+        style="background:color-mix(in srgb, var(${sev}) ${Math.round(a*100)}%, var(--panel-2))"
+        role="button" tabindex="0" title="${n} asset(s): ${r} criticality, ${c} urgency">
+        <span class="n">${n}</span>${n?`<span class="t">asset${n===1?'':'s'}</span>`:''}</div></td>`;
+    });
+    t+='</tr>';
+  });
+  $(sel).innerHTML=t+'</table>';
+  $$(sel+' .cell').forEach(el=>el.onclick=()=>{
+    FILTERS.crit=el.dataset.crit; FILTERS.urg=el.dataset.urg;
+    $('#f-crit').value=el.dataset.crit; show('inventory'); renderInventory();
+  });
+}
+
+function renderTop10(){
+  const rows=REPORT.assets.filter(a=>a.score>0).slice(0,10);
+  $('#top10').innerHTML=`<thead><tr><th>score</th><th>asset</th><th>status</th><th>location</th></tr></thead><tbody>`+
+    rows.map(a=>`<tr data-id="${a.id}"><td><span class="score" style="color:${COLOR[a.quantum_status]}">${a.score.toFixed(2)}</span>${a.hndl?' <span class="bang" title="harvest now, decrypt later">!</span>':''}</td>
+    <td class="mono">${esc(a.name)}</td><td>${pill(a.quantum_status)}</td><td><span class="loc">${esc(a.location)}</span></td></tr>`).join('')+'</tbody>';
+  bindRows('#top10');
+}
+
+function match(a){
+  const f=FILTERS;
+  if(f.status&&a.quantum_status!==f.status)return false;
+  if(f.crit&&a.criticality!==f.crit)return false;
+  if(f.conf&&a.confidence!==f.conf)return false;
+  if(f.urg&&a.urgency_band!==f.urg)return false;
+  if(f.source&&!a.source_types.includes(f.source))return false;
+  if(f.q){const s=(a.name+' '+a.location+' '+(a.library||'')+' '+a.algorithm).toLowerCase();
+    if(!s.includes(f.q.toLowerCase()))return false}
+  return true;
+}
+
+function renderInventory(){
+  const all=REPORT.assets, rows=all.filter(match);
+  const statuses=[...new Set(all.map(a=>a.quantum_status))];
+  const sources=[...new Set(all.flatMap(a=>a.source_types))];
+  fill('#f-status',statuses,FILTERS.status,'all statuses');
+  fill('#f-source',sources,FILTERS.source,'all sources');
+  fill('#f-crit',['high','medium','low'],FILTERS.crit,'all criticality');
+  fill('#f-conf',['high','medium','low'],FILTERS.conf,'all confidence');
+  $('#chips').innerHTML=FILTERS.urg?`<span class="chip">urgency: ${FILTERS.urg}<button data-c="urg">×</button></span>`:'';
+  $$('#chips button').forEach(b=>b.onclick=()=>{delete FILTERS[b.dataset.c];renderInventory()});
+  $('#count').textContent=`${rows.length} of ${all.length} assets`;
+  $('#exportscope').innerHTML=`Export will include <b>${rows.length}</b> of ${all.length} assets`+
+    (rows.length<all.length?` (filters active).`:` (no filters).`);
+
+  const cols=[['score','score'],['name','asset'],['algorithm','algorithm'],['key_size','key'],
+    ['quantum_status','status'],['criticality','criticality'],['confidence','confidence'],
+    ['source_types','sources'],['location','location']];
+  const sorted=[...rows].sort((a,b)=>{
+    let x=a[SORT.k],y=b[SORT.k];
+    if(Array.isArray(x))x=x.join();if(Array.isArray(y))y=y.join();
+    if(x==null)x='';if(y==null)y='';
+    return (x<y?-1:x>y?1:0)*SORT.d;
+  });
+  $('#inv').innerHTML=`<thead><tr>${cols.map(([k,l])=>
+    `<th data-k="${k}">${l}${SORT.k===k?(SORT.d<0?' ↓':' ↑'):''}</th>`).join('')}</tr></thead><tbody>`+
+    sorted.map(a=>`<tr data-id="${a.id}">
+      <td><span class="score" style="color:${COLOR[a.quantum_status]}">${a.score.toFixed(2)}</span>${a.hndl?' <span class="bang" title="harvest now, decrypt later">!</span>':''}</td>
+      <td class="mono">${esc(a.name)}</td><td class="mono">${esc(a.algorithm)}</td>
+      <td class="mono">${a.key_size||'—'}</td><td>${pill(a.quantum_status)}</td>
+      <td class="crit-${a.criticality}">${a.criticality}</td>
+      <td class="c-${a.confidence}">${a.confidence}</td>
+      <td class="mono" style="font-size:11px;color:var(--ink-dim)">${a.source_types.join(', ')}</td>
+      <td><span class="loc" title="${esc(a.location)}">${esc(a.location)}</span></td></tr>`).join('')+'</tbody>';
+  $$('#inv th').forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k; SORT.d=SORT.k===k?-SORT.d:-1; SORT.k=k; renderInventory();
+  });
+  bindRows('#inv');
+}
+
+function fill(sel,vals,cur,allLabel){
+  const el=$(sel);
+  el.innerHTML=`<option value="">${allLabel}</option>`+vals.map(v=>
+    `<option value="${v}"${cur===v?' selected':''}>${LABEL[v]||v}</option>`).join('');
+}
+
+function bindRows(sel){
+  $$(sel+' tbody tr').forEach(tr=>tr.onclick=e=>{
+    const a=REPORT.assets.find(x=>x.id===tr.dataset.id);
+    if(e.target.classList.contains('score'))explain(a);else detail(a);
+  });
+}
+
+/* Every number is explainable -- PRD 8.1. */
+function explain(a){
+  const m=a.mosca; if(!m)return detail(a);
+  const span=Math.max(m.x+m.y,m.z_years,1), pct=v=>Math.max(0,Math.min(100,100*v/span));
+  const gapPos=m.exposure_gap>0;
+  $('#pbody').innerHTML=`<h3>${esc(a.name)}</h3>
+  <div style="color:var(--ink-dim);font-size:11.5px;font-family:var(--mono)">${esc(a.location)}</div>
+  <div class="rationale">${esc(a.rationale)}</div>
+  <div class="timeline">
+    <div class="tl">
+      <div class="seg xy" style="left:0;width:${pct(m.x+m.y)}%"></div>
+      ${gapPos?`<div class="seg expo" style="left:${pct(m.z_years)}%;width:${pct(m.exposure_gap)}%">exposed</div>`:''}
+      <div class="seg" style="left:0;width:${pct(Math.min(m.z_years,m.x+m.y))}%;color:#e8d5e8">X+Y = ${m.x+m.y}y</div>
+      <div class="zmark" style="left:${pct(m.z_years)}%"></div>
+    </div>
+    <div class="tllab"><span>today</span>
+      <span style="color:var(--accent)">Z = ${m.z_year} (${m.z_years}y)</span>
+      <span>${(m.x+m.y).toFixed(1)}y</span></div>
+    <div style="margin-top:8px;font-size:11.5px;color:${gapPos?'var(--broken)':'var(--adequate)'}">
+      ${gapPos?`Exposure window of <b>${m.exposure_gap.toFixed(1)} years</b> — data outlives the migration runway. Overdue.`
+              :`No exposure window under this Z — ${Math.abs(m.exposure_gap).toFixed(1)}y of slack.`}</div>
+  </div>
+  <dl class="kv">
+    <dt>X data lifetime</dt><dd>${m.x} y <span class="badge ${m.x_source}">${m.x_source}</span></dd>
+    <dt>Y migration time</dt><dd>${m.y} y <span class="badge ${m.y_source==='tagged'?'tagged':'assumed'}">${m.y_source}</span></dd>
+    <dt>Z quantum arrival</dt><dd>${m.z_year} → ${m.z_years} y <span class="badge assumed">your estimate</span></dd>
+    <dt>criticality</dt><dd>${a.criticality} (weight ${m.criticality_weight})</dd>
+    <dt>harvest-now flag</dt><dd>${a.hndl?'yes':'no'}</dd>
+  </dl>
+  <div class="formula"><span class="cm"># exposure gap</span>
+(${m.x} + ${m.y}) − ${m.z_years} = <span class="hl">${m.exposure_gap.toFixed(2)}</span> years
+
+<span class="cm"># the three axes</span>
+urgency    = ${m.urgency.toFixed(3)}
+compliance = ${m.compliance.toFixed(3)}
+quantum    = ${m.quantum.toFixed(3)}
+
+risk  = max(...) × (0.6 + 0.4×${a.hndl?1:0}) = <span class="hl">${m.risk.toFixed(3)}</span>
+score = ${m.risk.toFixed(3)} × ${m.criticality_weight} = <span class="hl">${a.score.toFixed(3)}</span></div>
+
+  <div class="note" style="border-left:3px solid ${m.driver==='compliance'?'var(--deprecated)':m.driver==='quantum'?'var(--broken)':'var(--accent)'}">
+    <b>What set this score:</b> ${
+      m.driver==='compliance'?`the <b>NIST IR 8547 deadline</b>, not your Z estimate. Moving the Z slider
+        will not change this score — the regulator's date is fixed whatever anyone believes about Q-Day.`:
+      m.driver==='quantum'?`the <b>algorithm itself</b>. This is broken outright, so it is fully urgent
+        regardless of how the Mosca inputs land.`:
+      m.driver==='mosca-urgency'?`the <b>Mosca exposure gap</b>. This score is Z-sensitive — move the
+        slider and watch it change.`:
+      `nothing — no axis scored above zero, so this asset needs no action.`}
+  </div>
+  ${m.x_source==='assumed'?`<div class="note"><b>X is an assumption here.</b> No scanner can know how long
+   this data must stay confidential. Tag the owning service in <code>crypto-policy.yaml</code> to replace
+   the default with a real figure.</div>`:''}
+  ${a.regulatory_flags.length?`<div class="note"><b>Regulatory:</b> ${a.regulatory_flags.map(esc).join(' · ')}</div>`:''}
+  <button class="btn" style="margin-top:10px" onclick="detailById('${a.id}')">full asset detail →</button>`;
+  $('#panel').classList.add('on');
+}
+
+function detailById(id){detail(REPORT.assets.find(a=>a.id===id))}
+
+function detail(a){
+  const r=a.recommendation, c=a.certificate;
+  $('#pbody').innerHTML=`<h3>${esc(a.name)}</h3>
+  <div style="margin:6px 0 12px">${pill(a.quantum_status)}
+    <span class="badge">confidence: ${a.confidence}</span>
+    <span class="badge">criticality: ${a.criticality}</span>
+    ${a.hndl?'<span class="badge" style="color:var(--broken);border-color:#4a2320">harvest-now</span>':''}</div>
+  <div class="rationale">${esc(a.rationale)}</div>
+  <dl class="kv">
+    <dt>algorithm</dt><dd>${esc(a.algorithm)}${a.key_size?' / '+a.key_size:''}</dd>
+    ${Object.entries(a.parameters||{}).map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}
+    ${a.library?`<dt>library</dt><dd>${esc(a.library)}@${esc(a.library_version||'?')}</dd>`:''}
+    <dt>location class</dt><dd>${esc(a.location_class)}</dd>
+    <dt>sources</dt><dd>${a.source_types.join(', ')}</dd>
+    <dt>techniques</dt><dd>${a.detection_methods.join(', ')}</dd>
+    <dt>priority score</dt><dd><span class="score" onclick='explain(REPORT.assets.find(x=>x.id==="${a.id}"))'>${a.score.toFixed(3)}</span></dd>
+  </dl>
+  ${c?`<h3 style="font-size:12px;margin-top:16px">Certificate</h3><dl class="kv">
+    ${c.subject?`<dt>subject</dt><dd style="word-break:break-all">${esc(c.subject)}</dd>`:''}
+    ${c.issuer?`<dt>issuer</dt><dd style="word-break:break-all">${esc(c.issuer)}</dd>`:''}
+    ${c.not_after?`<dt>expires</dt><dd>${esc(c.not_after)}${c.days_until_expiry!=null?` (${c.days_until_expiry}d)`:''}</dd>`:''}
+    ${c.fingerprint_sha256?`<dt>sha256</dt><dd style="word-break:break-all;font-size:10px">${esc(c.fingerprint_sha256)}</dd>`:''}
+  </dl>`:''}
+  <h3 style="font-size:12px;margin-top:16px">Evidence (${a.evidence.length})</h3>
+  ${a.evidence.map(e=>`<div class="ev"><div class="m">${esc(e.detection_method)} · ${esc(e.confidence)} · ${esc(e.source_type)}</div>
+    <div class="s">${esc(e.location)}</div>${e.snippet?`<div class="s" style="color:var(--ink-faint)">${esc(e.snippet)}</div>`:''}</div>`).join('')}
+  ${r?`<h3 style="font-size:12px;margin-top:16px">Recommendation</h3>
+  <div class="rec"><div class="top"><span class="std">${esc(r.standard)} — ${esc(r.algorithm)}</span>
+    <span><span class="badge mat-${r.maturity}">${esc(r.maturity)}</span>${r.hybrid?'<span class="badge">hybrid</span>':''}</span></div>
+    <div class="why">${esc(r.rationale)}</div>
+    ${r.notes&&r.notes.length?`<ul>${r.notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}
+    <div style="margin-top:9px;font-size:11px;color:var(--ink-faint)">rotation cost: ${esc(r.rotation_cost)} · support: ${esc(r.support_maturity)}</div></div>`:''}`;
+  $('#panel').classList.add('on');
+}
+
+function renderRecs(){
+  const mode=$('#r-filter').value;
+  let rows=REPORT.assets.filter(a=>a.recommendation);
+  if(mode==='action')rows=rows.filter(a=>a.recommendation.standard!=='no change');
+  if(mode==='nochange')rows=rows.filter(a=>a.recommendation.standard==='no change');
+  $('#reccount').textContent=`${rows.length} assets`;
+  $('#recs').innerHTML=rows.slice(0,120).map(a=>{const r=a.recommendation;return `
+    <div class="rec"><div class="top">
+      <div><span class="mono" style="font-weight:600">${esc(a.name)}</span>
+        <span class="loc" style="margin-left:8px">${esc(a.location)}</span></div>
+      <div><span class="std">${esc(r.standard)} → ${esc(r.algorithm)}</span>
+        <span class="badge mat-${r.maturity}">${esc(r.maturity)}</span>
+        ${r.hybrid?'<span class="badge">hybrid</span>':''}
+        <span class="badge">score ${a.score.toFixed(2)}</span></div></div>
+      <div class="why">${esc(r.rationale)}</div>
+      ${r.notes&&r.notes.length?`<ul>${r.notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}
+      <div style="margin-top:8px;font-size:11px;color:var(--ink-faint)">rotation cost: ${esc(r.rotation_cost)} · support maturity: ${esc(r.support_maturity)}</div>
+    </div>`}).join('')||'<p class="sub">Nothing matches.</p>';
+}
+
+async function renderDrift(){
+  const d=await(await fetch('/api/drift')).json();
+  if(d.note){$('#drift').innerHTML=`<p class="sub">${esc(d.note)}</p>`;return}
+  const s=d.summary;
+  $('#drift').innerHTML=`<div style="display:flex;gap:18px;margin-bottom:10px;font-family:var(--mono);font-size:12px">
+    <span style="color:var(--adequate)">+${s.added} new</span>
+    <span style="color:var(--deprecated)">~${s.changed} changed</span>
+    <span style="color:var(--broken)">−${s.removed} removed</span></div>`+
+    (d.added.slice(0,5).map(a=>`<div class="ev"><span style="color:var(--adequate)">+</span> <span class="mono">${esc(a.name)}</span> <span class="loc">${esc(a.location)}</span></div>`).join('')||'');
+}
+
+/* Force-directed asset graph on canvas -- no external library, so nothing to
+   fail to load during a demo. Clusters keep the long tail represented.
+
+   Layout is computed in a fixed virtual space and only *fitted* to the canvas
+   when the view is visible. A hidden canvas reports clientWidth 0, so sizing it
+   at load time scaled the whole graph to nothing and drew an empty box. */
+const VW = 2000, VH = 1400;
+let G = {nodes: [], edges: [], idx: {}, tx: 0, ty: 0, scale: 1, loaded: false};
+
+async function renderGraph(){
+  const g = await (await fetch('/api/graph?max_nodes=140')).json();
+  const deg = {};
+  g.edges.forEach(e => {
+    deg[e.source_id] = (deg[e.source_id] || 0) + 1;
+    deg[e.target_id] = (deg[e.target_id] || 0) + 1;
+  });
+  // Phyllotaxis spiral: evenly spread and never coincident at any node count.
+  const nodes = g.nodes.map((n, i) => {
+    const r = 46 * Math.sqrt(i + 1), a = i * 2.39996;
+    return {...n, x: VW / 2 + Math.cos(a) * r, y: VH / 2 + Math.sin(a) * r,
+            vx: 0, vy: 0, deg: deg[n.id] || 0};
+  });
+  const idx = Object.fromEntries(nodes.map((n, i) => [n.id, i]));
+  const edges = g.edges.filter(e => idx[e.source_id] != null && idx[e.target_id] != null);
+
+  // Two clamps keep this stable. Without MIN_D2, two nearly-coincident nodes
+  // produce a near-infinite repulsion and the layout explodes to thousands of
+  // units across, which then fits to a scale so small the graph looks empty.
+  // MAX_V bounds any single step so one bad frame cannot fling a node away.
+  const MIN_D2 = 144, MAX_V = 55;
+  const clampV = v => v > MAX_V ? MAX_V : (v < -MAX_V ? -MAX_V : v);
+
+  for(let it = 0; it < 300; it++){
+    for(let i = 0; i < nodes.length; i++) for(let j = i + 1; j < nodes.length; j++){
+      const a = nodes[i], b = nodes[j];
+      let dx = b.x - a.x, dy = b.y - a.y;
+      let d2 = dx * dx + dy * dy;
+      if(d2 > 490000) continue;
+      if(d2 < MIN_D2){                 // coincident: nudge apart deterministically
+        dx = dx || (i - j) * 0.5 + 0.5; dy = dy || (j - i) * 0.5 + 0.5; d2 = MIN_D2;
+      }
+      const d = Math.sqrt(d2), f = 12000 / d2;
+      a.vx -= f * dx / d; a.vy -= f * dy / d; b.vx += f * dx / d; b.vy += f * dy / d;
+    }
+    edges.forEach(e => {
+      const a = nodes[idx[e.source_id]], b = nodes[idx[e.target_id]];
+      const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, f = (d - 130) * 0.013;
+      a.vx += f * dx / d; a.vy += f * dy / d; b.vx -= f * dx / d; b.vy -= f * dy / d;
+    });
+    nodes.forEach(n => {
+      n.vx += (VW / 2 - n.x) * 0.0018; n.vy += (VH / 2 - n.y) * 0.0018;
+      n.x += (n.vx = clampV(n.vx * 0.84)); n.y += (n.vy = clampV(n.vy * 0.84));
+    });
+  }
+  G = {nodes, edges, idx, tx: 0, ty: 0, scale: 1, loaded: true};
+  $('#graphinfo').textContent = `${nodes.length} nodes · ${edges.length} edges`
+    + (g.clustered ? ` · ${g.clustered} low-priority assets grouped into clusters (all ${g.total} represented)` : '');
+  fitGraph();
+}
+
+/* Size the canvas to its container and frame the layout. Only meaningful when
+   the view is on screen. */
+function fitGraph(){
+  const cv = $('#graph');
+  if(!cv.clientWidth || !G.nodes.length) return false;
+  cv.width = cv.clientWidth * 2;
+  cv.height = cv.clientHeight * 2;
+  const xs = G.nodes.map(n => n.x), ys = G.nodes.map(n => n.y);
+  const pad = 70;
+  const w = Math.max(1, Math.max(...xs) - Math.min(...xs) + pad * 2);
+  const h = Math.max(1, Math.max(...ys) - Math.min(...ys) + pad * 2);
+  G.scale = Math.min(cv.width / w, cv.height / h);
+  G.tx = cv.width / 2 - ((Math.min(...xs) + Math.max(...xs)) / 2) * G.scale;
+  G.ty = cv.height / 2 - ((Math.min(...ys) + Math.max(...ys)) / 2) * G.scale;
+  drawGraph();
+  return true;
+}
+
+function drawGraph(){
+  const cv = $('#graph'), ctx = cv.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(G.scale, 0, 0, G.scale, G.tx, G.ty);
+
+  ctx.strokeStyle = '#2c3a45'; ctx.lineWidth = 1.6;
+  G.edges.forEach(e => {
+    const a = G.nodes[G.idx[e.source_id]], b = G.nodes[G.idx[e.target_id]];
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  });
+  G.nodes.forEach(n => {
+    const r = n.cluster ? (13 + Math.min(18, Math.sqrt(n.count) * 5.5))
+                        : (8 + Math.min(12, n.deg * 1.7) + n.score * 8);
+    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7);
+    ctx.fillStyle = COLOR[n.status] || '#66798a'; ctx.fill();
+    ctx.strokeStyle = '#0d1216'; ctx.lineWidth = 2.5; ctx.stroke();
+    if(n.cluster){                       // dashed ring marks a group, not one asset
+      ctx.beginPath(); ctx.arc(n.x, n.y, r + 6, 0, 7);
+      ctx.setLineDash([6, 5]); ctx.strokeStyle = COLOR[n.status] || '#66798a';
+      ctx.lineWidth = 1.8; ctx.stroke(); ctx.setLineDash([]);
+    }
+    if(n.cluster || n.score > 0.5 || n.deg > 1){
+      ctx.font = '600 17px ui-monospace,monospace'; ctx.textAlign = 'center';
+      ctx.lineWidth = 4; ctx.strokeStyle = '#0d1216';
+      ctx.strokeText(n.label, n.x, n.y - r - 10);   // halo keeps labels readable over edges
+      ctx.fillStyle = '#e6edf2'; ctx.fillText(n.label, n.x, n.y - r - 10);
+    }
+  });
+}
+
+(function graphNav(){
+  const cv = $('#graph');
+  let drag = false, lx = 0, ly = 0;
+  cv.addEventListener('mousedown', e => { drag = true; lx = e.offsetX; ly = e.offsetY; cv.style.cursor = 'grabbing'; });
+  addEventListener('mouseup', () => { drag = false; cv.style.cursor = 'grab'; });
+  cv.addEventListener('mousemove', e => {
+    if(!drag) return;
+    G.tx += (e.offsetX - lx) * 2; G.ty += (e.offsetY - ly) * 2;
+    lx = e.offsetX; ly = e.offsetY; drawGraph();
+  });
+  cv.addEventListener('wheel', e => { e.preventDefault(); G.scale *= e.deltaY < 0 ? 1.12 : 0.89; drawGraph(); }, {passive: false});
+  cv.addEventListener('click', e => {
+    const x = (e.offsetX * 2 - G.tx) / G.scale, y = (e.offsetY * 2 - G.ty) / G.scale;
+    const hit = G.nodes.find(n => Math.hypot(n.x - x, n.y - y) < 30);
+    if(!hit) return;
+    if(hit.cluster){                     // a cluster opens its members, not a detail panel
+      FILTERS = {q: hit.algorithm, status: hit.status, source: '', crit: '', conf: ''};
+      $('#q').value = hit.algorithm; $('#f-status').value = hit.status;
+      show('inventory'); renderInventory(); return;
+    }
+    const a = REPORT.assets.find(z => z.id === hit.id); if(a) detail(a);
+  });
+  addEventListener('resize', () => { if($('#v-graph').classList.contains('on')) fitGraph(); });
+})();
+
+async function renderSettings(){
+  const p=await(await fetch('/api/policy')).json();
+  $('#polform').innerHTML=`<dl class="kv">
+    <dt>Z (quantum arrival)</dt><dd>${p.z_year}</dd>
+    <dt>urgency scale</dt><dd>${p.urgency_scale} y</dd>
+    <dt>CNSA 2.0 required</dt><dd>${p.cnsa2_required}</dd>
+    <dt>criticality weights</dt><dd>${Object.entries(p.criticality_weights).map(([k,v])=>k+'='+v).join(' · ')}</dd>
+    <dt>harvest-now multiplier</dt><dd>${p.hndl_multiplier}</dd></dl>
+    <div class="note">Changing Z here or on the slider recomputes every score. The change is written
+    to the audit log with the principal who made it.</div>`;
+  $('#services').innerHTML=p.services.length?`<div class="tablewrap"><table>
+    <thead><tr><th>service</th><th>data class</th><th>X</th><th>criticality</th><th>surface</th></tr></thead><tbody>`+
+    p.services.map(s=>`<tr><td class="mono">${esc(s.name)}</td><td>${esc(s.data_class||'—')}</td>
+      <td class="mono">${({ephemeral:0.1,operational:3,financial:7,pii:10,health:20,regulated:25,defence:25})[s.data_class]??'—'}y</td>
+      <td class="crit-${s.criticality}">${s.criticality}</td><td>${esc(s.surface||'—')}</td></tr>`).join('')+
+    '</tbody></table></div>':'<p class="sub">No service tags — every X falls back to the 7-year default and is badged <i>assumed</i>.</p>';
+  $('#allowlist').innerHTML=(p.scan_allowlist.length?
+    `<div class="mono" style="font-size:11.5px">${p.scan_allowlist.map(esc).join('<br>')}</div>`:
+    '<p class="sub">Empty — every live probe is refused.</p>')+
+    (p.authorization_attestation?`<div class="note"><b>Attestation:</b> ${esc(p.authorization_attestation)}</div>`:'');
+  const a=await(await fetch('/api/audit',{headers:{'x-role':'risk_officer'}})).json();
+  $('#audit').innerHTML=`<div class="tablewrap"><table><thead><tr><th>time</th><th>who</th><th>action</th><th>detail</th></tr></thead><tbody>`+
+    (a.slice(0,12).map(r=>`<tr><td class="mono" style="font-size:10.5px">${esc(r.ts)}</td><td class="mono">${esc(r.principal)}</td>
+    <td class="mono" style="color:var(--accent)">${esc(r.action)}</td><td style="font-size:11px;color:var(--ink-dim)">${esc(r.detail)}</td></tr>`).join('')||
+    '<tr><td colspan="4" class="sub">empty</td></tr>')+'</tbody></table></div>';
+}
+
+async function renderScans(){
+  const rows=await(await fetch('/api/scans')).json();
+  $('#scans').innerHTML=`<div class="tablewrap"><table><thead><tr><th>scan</th><th>started</th>
+    <th>by</th><th>sources</th><th>assets</th><th>targets</th></tr></thead><tbody>`+
+    rows.map((r,i)=>`<tr><td class="mono" style="color:${i?'var(--ink-dim)':'var(--accent)'}">${esc(r.scan_id)}${i?'':' ·current'}</td>
+      <td class="mono" style="font-size:11px">${esc(r.started_at)}</td>
+      <td class="mono">${esc(r.initiated_by||'—')}</td>
+      <td style="font-size:11px">${r.sources.join(', ')||'—'}</td>
+      <td class="mono">${r.asset_count}</td>
+      <td class="loc" title="${esc(r.targets.join(' '))}">${esc(r.targets.join(' '))}</td></tr>`).join('')+
+    '</tbody></table></div>';
+}
+
+async function renderValidation(){
+  const v=await(await fetch('/api/validate')).json();
+  $('#validation').innerHTML=`<div style="font-size:22px;font-family:var(--mono);color:${v.valid?'var(--adequate)':'var(--broken)'};font-weight:600">
+    ${v.valid?'✓ valid':'✕ '+v.errors.length+' error(s)'}</div>
+    <div class="sub" style="margin-top:6px">CycloneDX ${esc(v.spec_version)} · ${v.components} cryptographic-asset components</div>
+    ${v.errors.length?`<div class="err">${v.errors.slice(0,8).map(esc).join('<br>')}</div>`:
+      `<div class="note">Emitted against <b>CycloneDX 1.7</b>, ratified as <b>ECMA-424 2nd Edition</b>
+       (Dec 2025). Algorithm names are normalised through the 1.7 Cryptography Registry;
+       <code>nistQuantumSecurityLevel</code> is populated as a native schema field rather than
+       duplicated into our extension namespace.</div>`}`;
+}
+
+function show(v){
+  $$('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  $$('.view').forEach(s=>s.classList.toggle('on',s.id==='v-'+v));
+  if(v==='settings')renderSettings();
+  if(v==='reports'){renderValidation();renderScans();}
+  // The canvas has no width until its view is on screen, so the graph is laid
+  // out and fitted here rather than at load time.
+  if(v==='graph'){ if(!G.loaded){ renderGraph(); } else { fitGraph(); } }
+}
+$$('nav button').forEach(b=>b.onclick=()=>show(b.dataset.v));
+$('#pclose').onclick=()=>$('#panel').classList.remove('on');
+addEventListener('keydown',e=>{if(e.key==='Escape')$('#panel').classList.remove('on')});
+
+let zt=null;
+$('#z').oninput=e=>{
+  Z=+e.target.value; $('#zval').textContent=Z;
+  clearTimeout(zt); zt=setTimeout(()=>load(Z),160);
+};
+['q','f-status','f-source','f-crit','f-conf'].forEach(id=>{
+  const el=$('#'+id);
+  el.oninput=el.onchange=()=>{
+    FILTERS={q:$('#q').value,status:$('#f-status').value,source:$('#f-source').value,
+             crit:$('#f-crit').value,conf:$('#f-conf').value,urg:FILTERS.urg};
+    renderInventory();
+  };
+});
+$('#clearf').onclick=()=>{FILTERS={q:'',status:'',source:'',crit:'',conf:''};$('#q').value='';renderInventory()};
+$('#r-filter').onchange=renderRecs;
+$('#dl-cbom').onclick=()=>{
+  const p=new URLSearchParams({z:Z});
+  if(FILTERS.status)p.set('status',FILTERS.status);
+  if(FILTERS.crit)p.set('criticality',FILTERS.crit);
+  location.href='/api/export/cbom?'+p;
+};
+$('#dl-pdf').onclick=()=>{
+  const p=new URLSearchParams({z:Z,limit:40});
+  if(FILTERS.status)p.set('status',FILTERS.status);
+  if(FILTERS.crit)p.set('criticality',FILTERS.crit);
+  location.href='/api/export/pdf?'+p;
+};
+$('#dl-csv').onclick=()=>location.href='/api/export/csv?z='+Z;
+load();
+</script>
+</body>
+</html>

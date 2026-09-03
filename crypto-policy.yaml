@@ -1,0 +1,57 @@
+# Business inputs for the real scan targets.
+#
+# X (data lifetime) and criticality cannot be discovered by any scanner — they
+# are business facts about the systems the code runs in. This file is where a
+# risk owner records them, and anything not covered here falls back to a default
+# and is badged "assumed" in the dashboard and in the exported CBOM.
+#
+# Globs are matched against the location recorded in the finding, which is
+# relative to the scan root — scan `targets/` and a finding reads
+# `paramiko/paramiko/rsakey.py:139`, so both spellings are listed.
+#
+# The tags below are illustrative: they say "if paramiko were your SSH layer,
+# here is how you would classify it". The *findings* are real; these weightings
+# are a worked example, and the UI never pretends otherwise.
+
+scoring:
+  z_year: 2031          # a risk-officer estimate, not a prediction
+  urgency_scale: 10.0
+  default_criticality: medium
+  criticality_weights: {low: 0.4, medium: 0.7, high: 1.0}
+
+compliance:
+  cnsa2_required: false
+
+scanning:
+  # Live probing outside this list is refused, not warned about.
+  allowlist:
+    - localhost
+    - 127.0.0.1
+  authorization_attestation: >-
+    Local demo endpoint only. No third-party host is in scope for network
+    probing; add one here only with the owner's written authorisation.
+
+services:
+  - name: ssh-transport
+    paths: ["paramiko/*", "targets/paramiko/*"]
+    data_class: regulated       # X = 25y: session keys protect long-lived access
+    criticality: high
+    surface: public-api
+
+  - name: token-service-java
+    paths: ["jjwt/*", "targets/jjwt/*"]
+    data_class: pii             # X = 10y
+    criticality: high
+    surface: public-api
+
+  - name: token-service-node
+    paths: ["node-jsonwebtoken/*", "targets/node-jsonwebtoken/*"]
+    data_class: pii
+    criticality: medium
+    surface: public-api
+
+  - name: platform-crypto
+    paths: ["golang-crypto/*", "targets/golang-crypto/*"]
+    data_class: operational     # X = 3y
+    criticality: medium
+    surface: internal-service

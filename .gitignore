@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+out/
+*.db
+demo-cbom.json
+cbom.json
+.pytest_cache/
+risk-summary.pdf
+targets/

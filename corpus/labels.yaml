@@ -1,0 +1,122 @@
+# Ground truth for the CBOM Compass source scanner.
+#
+# Labelled by hand from reading the source, NOT generated from scanner output.
+# Generating labels from output would make precision and recall meaningless.
+#
+# Matching is at (file, algorithm, key_size, mode, curve) granularity, with any
+# attribute the label omits acting as a wildcard. Two metric sets are reported:
+#
+#   strict     — every labelled attribute must match. Measures whether we
+#                extract key sizes, modes and curves, not just algorithm names.
+#   algorithm  — (file, algorithm) only. Measures whether we noticed the file
+#                uses the algorithm at all.
+#
+# The gap between them is exactly how much attribute extraction is costing us.
+#
+# `note` explains, for a human reader, why a label is here. It never affects
+# scoring — a case we expect to miss is still counted as a miss.
+
+files:
+  # ---------------------------------------------------------------- Python
+  - path: python/hashlib_basic.py
+    expected:
+      - {algorithm: MD5}
+      - {algorithm: SHA-1}
+      - {algorithm: SHA-256}
+      - {algorithm: SHA-384}
+      - {algorithm: SHA-512}
+
+  - path: python/cryptography_asym.py
+    expected:
+      - {algorithm: RSA, key_size: 1024}
+      - {algorithm: RSA, key_size: 2048}
+      - {algorithm: RSA, key_size: 4096}
+      - {algorithm: DSA, key_size: 2048}
+      - {algorithm: ECDSA, curve: secp256r1}
+      - {algorithm: ECDSA, curve: secp384r1}
+      - {algorithm: EdDSA, curve: ed25519}
+      - {algorithm: ECDH, curve: x25519}
+      - {algorithm: DH, key_size: 2048}
+
+  - path: python/pycryptodome_ciphers.py
+    expected:
+      - {algorithm: AES, mode: ECB}
+      - {algorithm: AES, mode: GCM}
+      - {algorithm: 3DES, mode: CBC}
+      - {algorithm: DES, mode: ECB}
+      - {algorithm: RC4}
+
+  - path: python/from_imports.py
+    expected:
+      - {algorithm: MD5, note: "from hashlib import md5, then a bare md5()"}
+      - {algorithm: SHA-1}
+      - {algorithm: SHA-256}
+      - {algorithm: SHA-512, note: "imported under an alias"}
+      - {algorithm: SHA-384, note: "module imported as hl"}
+      - {algorithm: AES, mode: GCM, note: "AES imported as Rijndael"}
+      - {algorithm: RSA, key_size: 3072, note: "module imported under an alias"}
+      # Still expected as a finding: the algorithm really is used. It is
+      # scored at zero rather than hidden, which is a scoring question, not
+      # a detection one.
+      - {algorithm: MD5, note: "usedforsecurity=False — inventoried, not scored"}
+
+  - path: python/negative_lookalikes.py
+    expected: []          # negative control — any finding here is a false positive
+
+  - path: python/hard_dynamic.py
+    expected:
+      - {algorithm: MD5, note: "hashlib.new(ALGORITHM) — algorithm from env at runtime"}
+      - {algorithm: RSA, key_size: 1024, note: "key size from env at runtime"}
+      - {algorithm: SHA-1, note: "getattr(hashlib, 'sha1') — indirect resolution"}
+
+  # ------------------------------------------------------------------ Java
+  - path: java/Ciphers.java
+    expected:
+      - {algorithm: AES, mode: ECB}
+      - {algorithm: AES, mode: GCM}
+      - {algorithm: AES, note: "KeyGenerator.getInstance('AES'), no mode or size"}
+      - {algorithm: DES}
+      - {algorithm: 3DES, mode: CBC, note: "spelled DESede in the JCA"}
+      - {algorithm: MD5}
+      - {algorithm: SHA-1}
+      - {algorithm: SHA-256}
+      - {algorithm: RSA, key_size: 2048, note: "getInstance + initialize(2048) is one key"}
+      - {algorithm: ECDSA, note: "JCA spells the keypair algorithm 'EC'"}
+      - {algorithm: RSA, note: "SHA1withRSA signature"}
+      - {algorithm: ECDSA, note: "SHA256withECDSA signature"}
+
+  - path: java/Negative.java
+    expected: []
+
+  # -------------------------------------------------------------------- JS
+  - path: js/crypto_node.js
+    expected:
+      - {algorithm: MD5}
+      - {algorithm: SHA-1}
+      - {algorithm: SHA-256}
+      - {algorithm: AES, key_size: 128, mode: CBC}
+      - {algorithm: AES, key_size: 256, mode: GCM}
+      - {algorithm: 3DES, mode: CBC, note: "node spells it des-ede3-cbc"}
+      - {algorithm: RSA, key_size: 2048}
+      - {algorithm: EdDSA}
+      - {algorithm: RSA, note: "JWT RS256"}
+      - {algorithm: ECDSA, note: "JWT ES256"}
+
+  - path: js/negative.js
+    expected: []
+
+  # -------------------------------------------------------------------- Go
+  - path: go/tlsclient.go
+    expected:
+      - {algorithm: RSA, key_size: 1024}
+      - {algorithm: RSA, key_size: 2048}
+      - {algorithm: ECDSA, curve: secp256r1}
+      - {algorithm: 3DES}
+      - {algorithm: AES}
+      - {algorithm: MD5}
+      - {algorithm: SHA-256}
+      # NOT DES: crypto/des is imported only for NewTripleDESCipher. A scanner
+      # that reports plain DES here has produced a false positive.
+
+  - path: go/negative.go
+    expected: []
