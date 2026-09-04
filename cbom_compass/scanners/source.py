@@ -54,6 +54,18 @@ PY_CALL_RULES: dict[str, tuple[str, dict]] = {
     "oqs.KeyEncapsulation": ("unknown", {}), "KeyEncapsulation": ("unknown", {}),
     "oqs.Signature": ("unknown", {}), "Signature": ("unknown", {}),
 }
+# Which *positional* argument carries the key size, for callees where it is not
+# simply the first integer. `rsa.generate_private_key(65537, 2048)` is the one
+# that matters most: the public exponent comes first, so the naive "first int"
+# reading reports RSA-65537 and the key size never reaches the risk engine.
+KEY_SIZE_ARG_INDEX = {
+    "rsa.generate_private_key": 1,      # (public_exponent, key_size)
+    "dh.generate_parameters": 1,        # (generator, key_size)
+    "dsa.generate_private_key": 0,
+    "RSA.generate": 0,
+    "DSA.generate": 0,
+}
+
 PY_MODE_RULES = {
     "modes.ECB": "ECB", "modes.CBC": "CBC", "modes.GCM": "GCM", "modes.CTR": "CTR",
     "AES.MODE_ECB": "ECB", "AES.MODE_CBC": "CBC", "AES.MODE_GCM": "GCM",
@@ -294,7 +306,7 @@ class SourceScanner(Scanner):
                 continue
             algorithm, params = PY_CALL_RULES[match]
             params = dict(params)
-            key_size, confidence = self._python_key_size(node)
+            key_size, confidence = self._python_key_size(node, match)
             arg_mode = self._python_mode_arg(node)
             if arg_mode:
                 params["mode"] = arg_mode
@@ -334,13 +346,23 @@ class SourceScanner(Scanner):
         return None
 
     @staticmethod
-    def _python_key_size(node: ast.Call) -> tuple[int | None, Confidence]:
+    def _python_key_size(node: ast.Call, callee: str = "") -> tuple[int | None, Confidence]:
         """Literal argument -> high confidence; a variable -> medium."""
         for kw in node.keywords:
             if kw.arg in {"key_size", "bits", "modulus_length", "public_exponent_size"}:
                 if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, int):
                     return kw.value.value, Confidence.HIGH
                 return None, Confidence.MEDIUM
+        index = KEY_SIZE_ARG_INDEX.get(callee)
+        if index is not None:
+            if len(node.args) > index:
+                chosen = node.args[index]
+                if isinstance(chosen, ast.Constant) and isinstance(chosen.value, int):
+                    return chosen.value, Confidence.HIGH
+                return None, Confidence.MEDIUM
+            # Key size passed by keyword under a name we do not recognise, or
+            # omitted entirely: say nothing rather than read another argument.
+            return None, Confidence.MEDIUM if node.args else Confidence.HIGH
         for arg in node.args:
             if isinstance(arg, ast.Constant) and isinstance(arg.value, int) and arg.value >= 56:
                 return arg.value, Confidence.HIGH

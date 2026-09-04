@@ -9,6 +9,7 @@ dependencies = [
     "PyYAML>=6.0",
     "lief>=0.14",        # ELF/PE/Mach-O import-table parsing
     "reportlab>=4.0",    # PDF risk summary
+    "python-multipart>=0.0.9",   # multipart parsing for the upload endpoint
 ]
 
 [project.scripts]

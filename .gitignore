@@ -1,12 +1,85 @@
-.venv/
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
 *.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Unit test / coverage / tool cache
 .pytest_cache/
-out/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+htmlcov/
+.tox/
+.nox/
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment & Secrets
+.env
+.env.*
+*.env
+!*.env.example
+
+# Local Databases & SQLite
 *.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Project-specific runtime outputs & scans
+out/
+targets/
+.cbom-workspace/
 demo-cbom.json
 cbom.json
-.pytest_cache/
 risk-summary.pdf
-targets/
+demo-risk-summary.pdf
+*.log

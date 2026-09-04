@@ -266,6 +266,11 @@ class ScanRun:
     initiated_by: str
     asset_count: int = 0
     errors: list[dict[str, str]] = field(default_factory=list)
+    # Human-readable origin ("github.com/psf/requests", "payments.zip"). The
+    # workspace path in target_scope is real and is what `verify` re-reads, but
+    # it is not what anyone wants to see on a report. Defaulted so scans stored
+    # before this field existed still load.
+    label: str = ""
 
 
 def to_dict(obj: Any) -> Any:

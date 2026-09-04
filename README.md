@@ -13,7 +13,17 @@ Full specification: [`docs/cbom-compass-prd.md`](docs/cbom-compass-prd.md) (PRD 
 ## Quick start
 
 ```bash
-./demo.sh          # sets up, scans all six sources, opens the dashboard
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m cbom_compass.cli serve --policy crypto-policy.yaml
+```
+
+Open http://127.0.0.1:8000 and you land on **New scan**. Drop a `.zip` of your
+codebase onto the page, or type a public repository URL — `github.com/psf/requests` —
+and the inventory, risk heat map, recommendations and CycloneDX 1.7 export are
+built from it. No terminal needed after the server is up.
+
+```bash
+./demo.sh          # or: seed two scans from real upstream repos and open the dashboard
 ```
 
 That seeds two scans so the drift view has real content, starts a local TLS
@@ -59,6 +69,7 @@ Without that gate this is just a network scanner pointed at arbitrary hosts.
 ### Other commands
 
 ```bash
+cbom-compass scan --repo github.com/psf/requests    # clone and scan a public repository
 cbom-compass scan ./repo --container myimage:latest --tls host:443 --cloud aws://us-east-1
 cbom-compass scan ./repo --z 2040          # override the quantum-arrival estimate
 cbom-compass diff <old-scan-id> <new-scan-id>
@@ -184,6 +195,39 @@ into our extension namespace. Risk and recommendation data ride alongside under 
 
 **Store.** The PRD names Postgres + JSONB; this MVP uses SQLite with the same JSON-document shape, so
 the move is a connection-string change. Nothing depends on SQLite-specific behaviour.
+
+---
+
+## Code intake
+
+The dashboard accepts work two ways, both of which land in `cbom_compass/ingest.py`.
+
+| Route | Endpoint | Accepts |
+|---|---|---|
+| Upload | `POST /api/scan/upload` | `.zip`, `.tar.gz`, `.tgz`, or one source file |
+| Repository | `POST /api/scan/repo` | Public repo on github / gitlab / bitbucket / codeberg |
+
+Uploads are the untrusted edge of the system, so extraction is written out
+rather than delegated to `ZipFile.extractall`, which performs none of these
+checks:
+
+- **Path traversal** — every member is resolved against the extraction root and
+  refused if it escapes. Absolute paths, `..` segments, backslash separators and
+  Windows drive letters are all covered.
+- **Decompression bombs** — the ceiling is enforced against bytes actually
+  *read*, not the size declared in the archive header, which the attacker
+  controls. 200 MB compressed in, 800 MB extracted, 64 MB per file, 40 000 entries.
+- **Symlinks** — never materialised from an archive, and stripped from a clone
+  afterwards. Otherwise `config -> /etc/shadow` gets read and quoted back as
+  evidence.
+- **SSRF** — an arbitrary git URL reaches cloud metadata endpoints and the
+  `ext::` transport runs shell commands. Only https on an allowlisted host, no
+  credentials, no submodules, and the ambient git config is not read.
+
+Extracted trees are **kept** under `.cbom-workspace/`, not deleted. `verify`
+re-reads each finding from the artefact on disk to prove it was not fabricated,
+and that guarantee disappears if the tree is thrown away when the scan ends.
+Retention is capped at the 20 most recent trees.
 
 ---
 

@@ -15,6 +15,8 @@ AES-256/SHA-384 is required it surfaces as a CNSA 2.0 policy flag instead.
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass
 
 from ..models import QuantumStatus
@@ -81,6 +83,39 @@ PRIMITIVE = {
 
 # PQC algorithms — quantum-resistant by construction.
 PQC = {"ML-KEM", "ML-DSA", "SLH-DSA", "FN-DSA", "HQC", "LMS", "XMSS"}
+
+# NIST security category per parameter set (FIPS 203/204/205, and the HQC and
+# FN-DSA selections). Every post-quantum algorithm used to be reported at
+# category 5 regardless of its parameters, which overstated the most widely
+# deployed one — ML-KEM-768 is category 3 — by two levels. That number leaves
+# the tool as `nistQuantumSecurityLevel`, a CycloneDX field other systems read,
+# so it has to be the real category rather than a flattering default.
+PQC_SECURITY_CATEGORY = {
+    "ML-KEM": {512: 1, 768: 3, 1024: 5},
+    "ML-DSA": {44: 2, 65: 3, 87: 5},
+    "SLH-DSA": {128: 1, 192: 3, 256: 5},
+    "FN-DSA": {512: 1, 1024: 5},
+    "HQC": {128: 1, 192: 3, 256: 5},
+    # LMS and XMSS are stateful hash-based schemes whose strength comes from the
+    # chosen tree and hash parameters, not a named category. Left unmapped.
+}
+
+
+def pqc_security_category(algorithm: str, parameter_set: str | None) -> int | None:
+    """NIST category for a post-quantum parameter set, or None if unknown.
+
+    None is the honest answer for an unnamed parameter set: CycloneDX treats
+    `nistQuantumSecurityLevel` as optional, so omitting it says "not determined"
+    where a number would assert something the scan never established.
+    """
+    table = PQC_SECURITY_CATEGORY.get(algorithm)
+    if not table or not parameter_set:
+        return None
+    for token in re.findall(r"\d+", str(parameter_set)):
+        level = table.get(int(token))
+        if level is not None:
+            return level
+    return None
 
 
 @dataclass
@@ -192,10 +227,12 @@ def classify(algorithm: str, key_size: int | None = None,
             reg.append("cnsa2_noncompliant")
         if algo == "ML-DSA" and param and "87" not in param:
             reg.append("cnsa2_noncompliant")
+        level = pqc_security_category(algo, parameters.get("parameter_set"))
         return Classification(
             algo, primitive, QuantumStatus.ADEQUATE,
-            f"{algo} is a post-quantum standard; no known quantum or classical break.",
-            5, reg, adv,
+            f"{algo} is a post-quantum standard; no known quantum or classical break."
+            + (f" {param} is NIST security category {level}." if level else ""),
+            level, reg, adv,
         )
 
     # --- Classically broken ------------------------------------------------

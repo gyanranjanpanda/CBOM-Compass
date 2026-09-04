@@ -23,6 +23,26 @@ def test_python_ast_resolves_literal_key_sizes():
     assert "RSA-1024" in names
 
 
+def test_positional_key_size_is_read_from_the_right_argument(tmp_path):
+    """`rsa.generate_private_key(65537, 2048)` is RSA-2048, not RSA-65537.
+
+    The public exponent comes first in the cryptography API, so reading "the
+    first integer argument" reported the exponent as the key size and the real
+    size never reached the risk engine. Every sample in this repo passes these
+    by keyword, which is why the regression needs its own fixture.
+    """
+    module = tmp_path / "keys.py"
+    module.write_text(
+        "from cryptography.hazmat.primitives.asymmetric import rsa, dsa, dh\n"
+        "a = rsa.generate_private_key(65537, 2048)\n"
+        "b = rsa.generate_private_key(65537, 1024)\n"
+        "c = dsa.generate_private_key(1024)\n"
+        "d = dh.generate_parameters(2, 2048)\n")
+    names = found(SourceScanner().scan(str(module)))
+    assert {"RSA-2048", "RSA-1024", "DSA-1024", "DH-2048"} <= names
+    assert not any("65537" in n for n in names)
+
+
 def test_python_ast_resolves_curves_and_modes():
     names = found(SourceScanner().scan(f"{APP}/src/payments.py"))
     assert "ECDSA-secp256r1" in names

@@ -178,7 +178,9 @@ def build(report: dict, limit: int = 25, filters: str | None = None) -> bytes:
     kpis, run, policy = report["kpis"], report["run"], report["policy"]
     assets = report["assets"]
     generated = datetime.now(timezone.utc).strftime("%d %B %Y, %H:%M UTC")
-    scope = ", ".join(run.get("target_scope", []))[:180] or "unspecified"
+    # An upload or repo scan lives in a workspace directory whose name means
+    # nothing to a reader; the label records what was actually scanned.
+    scope = run.get("label") or ", ".join(run.get("target_scope", []))[:180] or "unspecified"
 
     story = [
         Paragraph("Cryptographic Risk Summary", st["title"]),

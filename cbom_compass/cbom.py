@@ -185,7 +185,8 @@ def _component(asset: Asset, risk: RiskClassification | None,
 def build(assets: list[Asset], relationships: list[Relationship],
           risks: dict[str, RiskClassification] | None = None,
           recommendations: dict[str, Recommendation] | None = None,
-          target_scope: list[str] | None = None) -> dict:
+          target_scope: list[str] | None = None,
+          label: str = "") -> dict:
     risks = risks or {}
     recommendations = recommendations or {}
     now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -216,9 +217,11 @@ def build(assets: list[Asset], relationships: list[Relationship],
                 }]
             },
             "component": {
+                # What was scanned, as a reader would name it. Falls back to the
+                # raw scope for local paths, which are already meaningful.
                 "type": "application",
                 "bom-ref": "target",
-                "name": ", ".join(target_scope or ["scan-target"]),
+                "name": label or ", ".join(target_scope or ["scan-target"]),
             },
             "properties": _props({
                 "cbom-compass:assetCount": len(assets),

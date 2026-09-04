@@ -3,7 +3,7 @@
 from cbom_compass.models import (Asset, AssetType, Confidence, Evidence,
                                  QuantumStatus, SourceType)
 from cbom_compass.policy import Policy
-from cbom_compass.risk import classify_asset
+from cbom_compass.risk import classify_all, classify_asset
 
 
 def asset(algorithm="RSA", key_size=2048, location="src/app.py:1",
@@ -171,3 +171,44 @@ def test_embedded_private_key_is_urgent_regardless_of_algorithm():
     result = classify_asset(key, Policy(z_year=2031), 2026)
     assert result.quantum_component == 1.0
     assert "embedded_key_material" in result.regulatory_flags
+
+
+def test_classical_half_of_a_hybrid_is_not_scored_as_urgent():
+    """X25519 inside mlkem768x25519 must not score like bare X25519.
+
+    Breaking the classical half of a hybrid does not break the exchange, and
+    traffic recorded today stays protected, so harvest-now-decrypt-later comes
+    off too. Recommendations tells people to deploy exactly this construction;
+    scoring it 1.00 penalised the codebases that had already migrated.
+    """
+    hybrid_half = asset("ECDH", None, "paramiko/kex_mlkem.py:76")
+    partner = asset("ML-KEM", None, "paramiko/kex_mlkem.py:88")
+    bare = asset("ECDH", None, "paramiko/kex_curve25519.py:30")
+
+    scored = classify_all([hybrid_half, partner, bare], Policy())
+
+    # The discount is relative: the same algorithm, identical in every respect
+    # except that one sits beside a PQC partner and the other does not.
+    assert scored[hybrid_half.id].score < scored[bare.id].score / 10
+    assert scored[hybrid_half.id].hndl_flag is False
+    assert scored[bare.id].hndl_flag is True, "bare X25519 is still harvestable"
+    assert "hybrid_classical_half" in scored[hybrid_half.id].regulatory_flags
+    assert "hybrid" in scored[hybrid_half.id].rationale.lower()
+
+
+def test_hybrid_pairing_requires_a_matching_primitive():
+    """A PQC signature in the same module does not excuse a key agreement."""
+    paired_wrongly = asset("ECDH", None, "app/crypto.py:10")
+    signature = asset("ML-DSA", None, "app/crypto.py:20")
+    control = asset("ECDH", None, "app/other.py:10")
+    scored = classify_all([paired_wrongly, signature, control], Policy())
+    assert scored[paired_wrongly.id].score == scored[control.id].score
+    assert "hybrid_classical_half" not in scored[paired_wrongly.id].regulatory_flags
+
+
+def test_a_pqc_algorithm_is_never_discounted_as_its_own_partner():
+    """ML-KEM already scores zero; the discount must not raise it."""
+    kem = asset("ML-KEM", None, "app/kex.py:10")
+    other = asset("ML-KEM", None, "app/kex.py:20")
+    scored = classify_all([kem, other], Policy())
+    assert scored[kem.id].score == 0.0

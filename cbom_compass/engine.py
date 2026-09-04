@@ -139,6 +139,7 @@ class ScanReport:
         return cbom.build(
             self.inventory.assets, self.inventory.relationships,
             self.risks, self.recommendations, self.run.target_scope,
+            label=self.run.label,
         )
 
     def to_dict(self) -> dict:
@@ -159,8 +160,13 @@ class ScanReport:
 
 
 def run_scan(targets: dict[str, list[str]], policy: Policy | None = None,
-             initiated_by: str = "cli") -> ScanReport:
-    """targets maps scanner name -> list of targets, e.g. {"source": ["./repo"]}."""
+             initiated_by: str = "cli", label: str = "") -> ScanReport:
+    """targets maps scanner name -> list of targets, e.g. {"source": ["./repo"]}.
+
+    `label` names the origin for display when the paths themselves are not
+    meaningful — an uploaded archive lands in a workspace directory whose name
+    tells a reader nothing.
+    """
     policy = policy or Policy()
     started = datetime.now(timezone.utc).isoformat(timespec="seconds")
     combined = ScanResult()
@@ -201,6 +207,7 @@ def run_scan(targets: dict[str, list[str]], policy: Policy | None = None,
         initiated_by=initiated_by,
         asset_count=len(inventory.assets),
         errors=[to_dict(e) for e in combined.errors],
+        label=label,
     )
     return ScanReport(run, inventory, risks, recommendations, policy,
                       raw_asset_count=raw_count, errors=combined.errors)
