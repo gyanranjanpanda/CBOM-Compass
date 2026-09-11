@@ -5,8 +5,12 @@ __pycache__/
 .pytest_cache/
 out/
 *.db
+*.db-wal
+*.db-shm
 demo-cbom.json
 cbom.json
-.pytest_cache/
 risk-summary.pdf
 targets/
+.cbom-workspace/
+demo-risk-summary.pdf
+*.log

@@ -1,0 +1,19 @@
+{
+  "provider": "pkcs11",
+  "location": "luna-partition-01",
+  "_note": "Sample PKCS#11 hardware-module export, for demoing the HSM source type without a physical token (PRD section 13). A live scan of the same partition is `cbom-compass scan --cloud pkcs11:///usr/lib/softhsm/libsofthsm2.so`. Every key here lands with location_class 'hardware-module', which routes it to the long migration estimate in knowledge/mosca.py: an HSM key waits on vendor firmware, not on an application release.",
+  "keys": [
+    {"KeyId": "root-ca-signing-key", "KeySpec": "RSA_4096", "KeyUsage": "SIGN_VERIFY",
+     "Enabled": true, "RotationEnabled": false, "Origin": "HSM", "Extractable": false},
+    {"KeyId": "issuing-ca-key", "KeySpec": "RSA_2048", "KeyUsage": "SIGN_VERIFY",
+     "Enabled": true, "RotationEnabled": false, "Origin": "HSM", "Extractable": false},
+    {"KeyId": "card-issuance-key", "KeySpec": "ECC_NIST_P256", "KeyUsage": "SIGN_VERIFY",
+     "Enabled": true, "RotationEnabled": false, "Origin": "HSM", "Extractable": false},
+    {"KeyId": "legacy-pin-block-key", "KeySpec": "DES3", "KeyUsage": "ENCRYPT_DECRYPT",
+     "Enabled": true, "RotationEnabled": false, "Origin": "HSM", "Extractable": false},
+    {"KeyId": "database-wrapping-key", "KeySpec": "SYMMETRIC_DEFAULT", "KeyUsage": "ENCRYPT_DECRYPT",
+     "Enabled": true, "RotationEnabled": true, "Origin": "HSM", "Extractable": true},
+    {"KeyId": "code-signing-key", "KeySpec": "ECC_NIST_P384", "KeyUsage": "SIGN_VERIFY",
+     "Enabled": true, "RotationEnabled": false, "Origin": "HSM", "Extractable": false}
+  ]
+}

@@ -13,7 +13,17 @@ Full specification: [`docs/cbom-compass-prd.md`](docs/cbom-compass-prd.md) (PRD 
 ## Quick start
 
 ```bash
-./demo.sh          # sets up, scans all six sources, opens the dashboard
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m cbom_compass.cli serve --policy crypto-policy.yaml
+```
+
+Open http://127.0.0.1:8000 and you land on **New scan**. Drop a `.zip` of your
+codebase onto the page, or type a public repository URL — `github.com/psf/requests` —
+and the inventory, risk heat map, recommendations and CycloneDX 1.7 export are
+built from it. No terminal needed after the server is up.
+
+```bash
+./demo.sh          # or: seed two scans from real upstream repos and open the dashboard
 ```
 
 That seeds two scans so the drift view has real content, starts a local TLS
@@ -45,6 +55,17 @@ driving as a library to enumerate every accepted cipher suite rather than just t
 They are named here rather than stubbed, because a stub that shells out and discards the output is
 worse than an honest gap.
 
+Note that the SSH scanner does not have the equivalent gap. SSH announces every algorithm it will
+accept in its opening `SSH_MSG_KEXINIT`, before anything is negotiated, so reading one message gives
+the complete accepted set — the enumeration sslyze has to work for on the TLS side.
+
+The live cloud and hardware connectors need their SDKs, which are optional extras so that a plain
+install stays small:
+
+```bash
+pip install -e ".[connectors]"    # boto3, azure-keyvault-keys, google-cloud-kms, python-pkcs11
+```
+
 ### Demoing the live-endpoint scanner
 
 ```bash
@@ -59,7 +80,13 @@ Without that gate this is just a network scanner pointed at arbitrary hosts.
 ### Other commands
 
 ```bash
+cbom-compass scan --repo github.com/psf/requests    # clone and scan a public repository
 cbom-compass scan ./repo --container myimage:latest --tls host:443 --cloud aws://us-east-1
+cbom-compass scan --ssh jump.internal:22                  # offered kex/host-key/cipher/MAC set
+cbom-compass scan --cloud azure://kv-payments-prod        # Azure Key Vault
+cbom-compass scan --cloud gcp://my-project/global         # GCP Cloud KMS
+cbom-compass scan --cloud pkcs11:///usr/lib/softhsm/libsofthsm2.so   # any PKCS#11 HSM/TPM
+cbom-compass scan --cloud file://samples/hsm-export.json  # HSM demo without a token
 cbom-compass scan ./repo --z 2040          # override the quantum-arrival estimate
 cbom-compass diff <old-scan-id> <new-scan-id>
 cbom-compass validate cbom.json
@@ -69,16 +96,33 @@ cbom-compass validate cbom.json
 
 ## What it does
 
-**Discovery.** Six source types, each normalised into one de-duplicated inventory.
+**Discovery.** Eight source types, each normalised into one de-duplicated inventory.
 
 | Source | Technique | Confidence |
 |---|---|---|
-| Source code | Python via stdlib `ast` (resolves literal key sizes, curves, modes); Java/JS/Go via pattern rules | high / medium |
+| Source code | Python via stdlib `ast` (resolves literal key sizes, curves, modes); Java, JS/TS, Go, **C/C++**, **C#/.NET** and **Rust** via pattern rules | high / medium |
+| Configuration | `sshd_config`, strongSwan `ipsec.conf`/`swanctl.conf`, OpenVPN, nginx/Apache TLS, S/MIME. Protocol cryptography that no AST walk and no manifest can reach | medium |
 | Dependencies | Manifest parsing against a crypto-library knowledge base | high on version |
 | Binaries | LIEF parses the import table (ELF `DT_NEEDED`, Mach-O `LOAD_DYLIB`, PE descriptors) for linked libraries and imported crypto functions; symbol names often carry the key size and mode too (`EVP_aes_128_gcm`). Byte scanning is the fallback for statically-linked or stripped binaries, at lower confidence | high / medium |
 | Containers | Layer walk plus **embedded key and certificate discovery** — the find nothing else makes | high |
-| Live endpoints | TLS handshake probing, allowlist-gated | high (ground truth) |
-| Cloud / HSM | AWS KMS via boto3, read-only APIs only (`ListKeys`, `DescribeKey`, `GetKeyRotationStatus`); or a key-store export as JSON for demoing without credentials | high |
+| Live TLS | TLS handshake probing, allowlist-gated | high (ground truth) |
+| Live SSH | `SSH_MSG_KEXINIT` read over a raw socket: the **complete offered set** of kex, host-key, cipher and MAC algorithms, not one negotiated suite. The handshake is abandoned before key exchange — never authenticated, no credential sent | high (ground truth) |
+| Cloud / hardware | AWS KMS, Azure Key Vault and GCP Cloud KMS over read-only metadata APIs; **PKCS#11** for any HSM or TPM (SoftHSM, Luna, nCipher, Utimaco, YubiHSM, CloudHSM, tpm2-pkcs11); or a key-store export as JSON for demoing without credentials or a token | high |
+
+Two things in that table are load-bearing rather than box-ticking.
+
+*Hardware modules* get their own `location_class`, not a shared one with cloud KMS. A key confined
+to a token cannot be re-issued by an application team — the vendor must ship firmware that implements
+ML-KEM or ML-DSA first, then it must be re-certified, then installed in a change window. So an HSM
+key inherits the **embedded** migration estimate (5 years), making it a *harder* migration than the
+same algorithm in application code, not an easier one. Managed cloud keys stay on the short estimate,
+because AWS already exposes ML-DSA parameter sets and a managed key rotates on request.
+
+*Hybrid key exchange* is declared, not inferred, wherever the identifier says so. `mlkem768x25519-sha256`
+names its own pairing, so both halves are emitted and linked explicitly. That matters because an
+`sshd_config` lists hybrid and non-hybrid key exchanges on the same line: inferring from co-location
+would discount a bare `curve25519-sha256` sitting next to a migrated one, marking a genuinely exposed
+key exchange as already done.
 
 **Assessment.** Two independent clocks, because only one of them is a guess:
 
@@ -187,6 +231,39 @@ the move is a connection-string change. Nothing depends on SQLite-specific behav
 
 ---
 
+## Code intake
+
+The dashboard accepts work two ways, both of which land in `cbom_compass/ingest.py`.
+
+| Route | Endpoint | Accepts |
+|---|---|---|
+| Upload | `POST /api/scan/upload` | `.zip`, `.tar.gz`, `.tgz`, or one source file |
+| Repository | `POST /api/scan/repo` | Public repo on github / gitlab / bitbucket / codeberg |
+
+Uploads are the untrusted edge of the system, so extraction is written out
+rather than delegated to `ZipFile.extractall`, which performs none of these
+checks:
+
+- **Path traversal** — every member is resolved against the extraction root and
+  refused if it escapes. Absolute paths, `..` segments, backslash separators and
+  Windows drive letters are all covered.
+- **Decompression bombs** — the ceiling is enforced against bytes actually
+  *read*, not the size declared in the archive header, which the attacker
+  controls. 200 MB compressed in, 800 MB extracted, 64 MB per file, 40 000 entries.
+- **Symlinks** — never materialised from an archive, and stripped from a clone
+  afterwards. Otherwise `config -> /etc/shadow` gets read and quoted back as
+  evidence.
+- **SSRF** — an arbitrary git URL reaches cloud metadata endpoints and the
+  `ext::` transport runs shell commands. Only https on an allowlisted host, no
+  credentials, no submodules, and the ambient git config is not read.
+
+Extracted trees are **kept** under `.cbom-workspace/`, not deleted. `verify`
+re-reads each finding from the artefact on disk to prove it was not fabricated,
+and that guarantee disappears if the tree is thrown away when the scan ends.
+Retention is capped at the 20 most recent trees.
+
+---
+
 ## Security model
 
 The output of this tool is a ranked, filterable list of an organisation's weakest cryptography — an
@@ -239,16 +316,20 @@ is not cryptography in use, and filtering comments removed 14 false positives.
 .venv/bin/python -m cbom_compass.cli eval
 ```
 
-Against `corpus/` — 50 usages hand-labelled from source across four languages, plus four negative
+Against `corpus/` — 92 usages hand-labelled from source across seven languages, plus seven negative
 controls that mention cryptography in prose and identifiers while performing none:
 
 | Metric set | Precision | Recall | F1 |
 |---|---|---|---|
-| **algorithm** (did we notice the usage) | 100.0% | 95.0% | 0.97 |
-| **strict** (key size, mode and curve too) | 97.9% | 94.0% | 0.96 |
+| **algorithm** (did we notice the usage) | 100.0% | 97.5% | 0.99 |
+| **strict** (key size, mode and curve too) | 98.9% | 96.7% | 0.98 |
 
-Per language, algorithm-level: Python 100% / 88.9%, Java 100% / 100%, JS 100% / 100%,
-Go 100% / 100%. Zero findings on the negative controls.
+Per language, algorithm-level: C 100% / 100%, C# 100% / 100%, Go 100% / 100%, Java 100% / 100%,
+JS 100% / 100%, Python 100% / 92.0%, Rust 100% / 100%. Zero findings on the negative controls.
+
+`tests/test_evaluate.py` derives the required language list from the scanner's own rule table, so
+adding a language without labelling a corpus for it fails the suite rather than shipping an
+unmeasured claim.
 
 Every remaining miss is in `corpus/python/hard_dynamic.py` — algorithm names read from the
 environment, key sizes from variables, `getattr(hashlib, ...)` indirection. Those are labelled as
@@ -281,8 +362,20 @@ catches that. `test_ui.py` skips itself if Playwright is not installed
 - `test_api.py::test_pinned_assets_hold_when_z_moves` — regulation-pinned scores must not drift.
 - `test_api.py::test_graph_clusters_rather_than_truncating` — every asset stays represented in the
   graph; the long tail is clustered, never dropped.
-- `test_cloud.py::test_scanner_stays_within_read_only_apis` — the KMS connector is asserted, against
-  a recording fake client, never to call anything beyond describe-level APIs.
+- `test_cloud.py::test_scanner_stays_within_read_only_apis` — the KMS connectors are asserted,
+  against recording fake clients for AWS, Azure and GCP, never to call anything beyond
+  describe-level APIs.
+- `test_cloud.py::test_pkcs11_never_reads_key_material` — the fake token raises if `CKA_VALUE` or
+  `CKA_PRIVATE_EXPONENT` is ever touched, so the read-only claim is enforced rather than documented.
+- `test_cloud.py::test_hardware_keys_carry_the_long_migration_estimate` — an HSM-resident RSA key
+  must score a longer migration time than the same algorithm under managed KMS.
+- `test_protocols.py::test_ssh_hybrid_kex_discounts_only_its_own_classical_half` — a bare
+  `curve25519-sha256` offered beside a migrated hybrid must stay flagged. This is the most expensive
+  mistake the tool could make, so it has its own test.
+- `test_protocols.py::test_a_removal_list_is_not_an_inventory` — `PubkeyAcceptedAlgorithms -ssh-dss`
+  *disables* DSA; reporting it would invert the finding.
+- `test_scanners.py::test_a_multiline_block_comment_is_not_code` — the middle line of a `/* */`
+  block neither opens nor closes it, and commented-out crypto is not crypto in use.
 - `test_ui.py::test_asset_graph_actually_draws_pixels` — reads the rendered canvas bitmap, because
   a blank graph passes every other check.
 - `test_ui.py::test_z_slider_recomputes_scores_live` — dragging Z must actually move total risk.
@@ -295,11 +388,12 @@ catches that. `test_ui.py` skips itself if Playwright is not installed
 
 | Requirement | Status |
 |---|---|
-| Scans source code repositories | ✅ Python (AST), Java/JS/Go (patterns) |
+| Scans source code repositories | ✅ Python (AST); Java, JS/TS, Go, C/C++, C#/.NET, Rust (patterns) |
 | Scans compiled binaries | ✅ ELF/PE/Mach-O library + symbol resolution |
 | Scans libraries / dependencies | ✅ requirements.txt, package.json, pom.xml, go.mod |
 | Scans container images | ✅ layer walk, SBOM, embedded key material |
-| Scans cloud / HSM key stores | ✅ AWS KMS + key-store export, rotation and HSM backing |
+| Scans cloud / HSM key stores | ✅ AWS KMS, Azure Key Vault, GCP Cloud KMS, PKCS#11 hardware modules, key-store export |
+| Catalogues protocols | ✅ TLS and SSH probed live; SSH/IPsec/OpenVPN/web-TLS/S-MIME from configuration |
 | Standardised CBOM report | ✅ CycloneDX 1.7 / ECMA-424 2nd Ed, validated |
 | Quantum risk assessment | ✅ Shor + classical + HNDL, **plus NIST 8547 / CNSA 2.0** |
 | Mosca classification | ✅ continuous score with input provenance |
@@ -310,8 +404,7 @@ Beyond the stated ask: per-finding **confidence levels**, cross-source **de-dupl
 **regulatory deadline** axis, **drift** tracking, **measured accuracy** against a labelled corpus,
 and a **security model for the tool itself**.
 
-**Not built.** CI scan-on-commit plugin (Phase 4). Azure and GCP live connectors — their key specs
-are mapped and reachable through the export format, but only AWS has a live API client. Certificate
+**Not built.** CI scan-on-commit plugin (Phase 4). Certificate
 *chain* walking: leaf certificates carry full metadata and expiry, issuer chains do not, so the
 "if this CA breaks, which certificates cascade" view is not yet complete. RBAC is header-based and
 demonstrates where gating belongs rather than being real authentication. And CBOM conformance is

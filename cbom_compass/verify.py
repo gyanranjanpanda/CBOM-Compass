@@ -103,6 +103,74 @@ def _check_source(asset: dict, path: Path, lineno: int | None) -> Check:
     )
 
 
+# Which configuration file kind each protocol container must have come from.
+# S/MIME is absent deliberately: its markers appear in application code and mail
+# configuration alike, so it is re-derived from the marker itself below.
+PROTOCOL_FILE_KINDS = {
+    "SSH-2.0": "ssh", "IPsec": "ipsec", "OpenVPN": "openvpn",
+}
+
+
+def _check_config(asset: dict, path: Path, lineno: int | None) -> Check:
+    """Re-read a configured algorithm from the file that configures it.
+
+    Stronger than the generic source check, because the configuration scanner
+    records the exact token it matched (`configured_as`: "cipher 3des-cbc",
+    "ike proposal aes256-sha256-modp2048!"). Looking for that token rather than
+    for the algorithm name means a finding can only be confirmed by the literal
+    text that produced it, not by an unrelated mention elsewhere in the file.
+    """
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    detail = asset["evidence"][0].get("detail") or {}
+    configured = str(detail.get("configured_as") or "")
+
+    if not configured:
+        # A protocol container (SSH-2.0, IPsec, OpenVPN) is anchored to the file
+        # rather than to a token in it, so there is no literal to look for. What
+        # can be re-derived is that this file really is that kind of
+        # configuration, which is exactly the claim the finding makes. Checked
+        # against the scanner's own file classifier so the two cannot drift.
+        from .scanners.config import SMIME_MARKERS, config_kind
+        algorithm = normalise(asset["algorithm"])
+        if algorithm == "S/MIME":
+            marker = SMIME_MARKERS.search("\n".join(lines))
+            return Check(
+                asset["name"], asset["location"], asset["detection_methods"][0],
+                asset["confidence"], "confirmed" if marker else "unconfirmed",
+                f"{path} contains an S/MIME marker: {bool(marker)}",
+                marker.group(0).strip()[:110] if marker else None,
+            )
+        kind = config_kind(path)
+        expected = PROTOCOL_FILE_KINDS.get(algorithm)
+        hit = kind is not None and (expected is None or kind == expected)
+        return Check(
+            asset["name"], asset["location"], asset["detection_methods"][0],
+            asset["confidence"], "confirmed" if hit else "unconfirmed",
+            f"{path} is a recognised {kind or 'unrecognised'} configuration file "
+            f"(expected {expected or 'any'})",
+            lines[0].strip()[:110] if lines else None,
+        )
+
+    # "cipher suite ECDHE-RSA-AES256-GCM-SHA384" -> the suite name itself.
+    token = configured.split()[-1]
+
+    if lineno is not None and 0 < lineno <= len(lines):
+        line = lines[lineno - 1]
+        hit = token.lower() in line.lower()
+        haystack_note = f"{path}:{lineno}"
+    else:
+        # A protocol container is anchored to the file, not to one line.
+        line = next((raw for raw in lines if token.lower() in raw.lower()), "")
+        hit = bool(line)
+        haystack_note = str(path)
+
+    return Check(
+        asset["name"], asset["location"], asset["detection_methods"][0],
+        asset["confidence"], "confirmed" if hit else "unconfirmed",
+        f"{haystack_note} configures {token!r}: {hit}", line.strip()[:110] or None,
+    )
+
+
 def _check_binary(asset: dict, path: Path) -> Check:
     data = path.read_bytes()
     evidence = asset["evidence"][0]
@@ -174,6 +242,8 @@ def verify(report: dict, roots: list[str], sample: int | None = 12,
         try:
             if source == "source_code":
                 checks.append(_check_source(asset, path, lineno))
+            elif source == "configuration":
+                checks.append(_check_config(asset, path, lineno))
             elif source in {"binary", "container"}:
                 checks.append(_check_binary(asset, path))
             elif source == "cloud_kms":

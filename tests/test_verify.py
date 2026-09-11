@@ -117,3 +117,28 @@ def test_comments_are_not_reported_as_usage():
     assert "SHA-256" in found
     assert "MD5" not in found
     assert "RSA" not in found
+
+
+def test_configuration_findings_are_re_readable_from_disk():
+    """A cipher list lives in a file, so it must not be reported as unverifiable.
+
+    The check looks for the exact token the scanner matched, not merely for the
+    algorithm name, so an unrelated mention elsewhere in the file cannot confirm
+    a finding.
+    """
+    report = run_scan({"config": ["samples/vulnerable-app/deploy"]}, Policy()).to_dict()
+    checks = verify(report, ["samples/vulnerable-app/deploy"], sample=0)
+    config_checks = [c for c in checks if c.technique.startswith("config-")]
+    assert config_checks
+    assert all(c.verdict == "confirmed" for c in config_checks), [
+        (c.asset, c.detail) for c in config_checks if c.verdict != "confirmed"]
+
+
+def test_a_fabricated_configuration_finding_does_not_confirm():
+    report = run_scan({"config": ["samples/vulnerable-app/deploy"]}, Policy()).to_dict()
+    row = next(a for a in report["assets"]
+               if a["detection_methods"][0].startswith("config-")
+               and (a["evidence"][0].get("detail") or {}).get("configured_as"))
+    row["evidence"][0]["detail"]["configured_as"] = "cipher never-configured-anywhere"
+    checks = verify({"assets": [row]}, ["samples/vulnerable-app/deploy"], sample=0)
+    assert checks[0].verdict == "unconfirmed"

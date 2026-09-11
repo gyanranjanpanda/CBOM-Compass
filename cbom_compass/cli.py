@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from . import cbom as cbom_mod
+from .engine import PATH_SCANNERS
 from .engine import diff as diff_reports
 from .engine import run_scan
 from .policy import Policy
@@ -89,20 +90,36 @@ def cmd_scan(args: argparse.Namespace) -> int:
     if args.z:
         policy.z_year = args.z
     targets: dict[str, list[str]] = {}
-    if args.path:
-        for name in ("source", "dependencies", "binary"):
-            targets[name] = list(args.path)
+    paths = list(args.path)
+    label = ""
+    if getattr(args, "repo", None):
+        from .ingest import IngestError, ingest_repo
+        try:
+            source = ingest_repo(args.repo)
+        except IngestError as exc:
+            print(f"{RED}{exc}{RST}", file=sys.stderr)
+            return 2
+        print(f"{DIM}cloned {source.label} — {source.file_count} files "
+              f"into {source.root}{RST}")
+        paths.append(str(source.root))
+        label = source.label
+    if paths:
+        for name in PATH_SCANNERS:
+            targets[name] = list(paths)
     if args.container:
         targets["container"] = list(args.container)
     if args.tls:
         targets["tls"] = list(args.tls)
+    if args.ssh:
+        targets["ssh"] = list(args.ssh)
     if args.cloud:
         targets["cloud"] = list(args.cloud)
     if not targets:
-        print("nothing to scan — pass a path, --container, or --tls", file=sys.stderr)
+        print("nothing to scan — pass a path, --repo, --container, --tls, "
+              "--ssh or --cloud", file=sys.stderr)
         return 2
 
-    report = run_scan(targets, policy, initiated_by=args.user)
+    report = run_scan(targets, policy, initiated_by=args.user, label=label)
     _print_report(report, args.limit)
 
     store = Store(args.db)
@@ -248,10 +265,17 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("scan", help="scan targets and score them")
     p.add_argument("path", nargs="*", help="repo / directory / file to scan")
+    p.add_argument("--repo", default=None,
+                   help="public repository to clone and scan, e.g. github.com/psf/requests")
     p.add_argument("--container", action="append", default=[], help="image ref, tarball, or extracted dir")
-    p.add_argument("--tls", action="append", default=[], help="host:port (must be in the policy allowlist)")
+    p.add_argument("--tls", action="append", default=[],
+                   help="TLS host:port (must be in the policy allowlist)")
+    p.add_argument("--ssh", action="append", default=[],
+                   help="SSH host:port, default port 22 (must be in the policy allowlist)")
     p.add_argument("--cloud", action="append", default=[],
-                   help="key store: aws://<region> or file://<export.json>")
+                   help="key store: aws://<region>, azure://<vault>, "
+                        "gcp://<project>/<location>, pkcs11://<module.so>, "
+                        "or file://<export.json>")
     p.add_argument("--policy", default=None, help="crypto-policy.yaml")
     p.add_argument("--z", type=int, default=None, help="override the quantum-arrival year")
     p.add_argument("-o", "--out", default=None, help="write report to file")

@@ -11,6 +11,7 @@ jobs:
     name: Test & Conformance
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
 
@@ -29,11 +30,46 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run Test Suite
-        run: |
-          pytest -v
+      # Browser tests are deselected rather than skipped silently, so a missing
+      # Playwright install can never be mistaken for a passing UI suite.
+      - name: Run test suite
+        run: pytest -v -m "not browser"
 
-      - name: Conformance & Evaluator Accuracy Check
+      # The conformance check below validates a real CBOM. Generating it here
+      # rather than committing one keeps the fixture honest: it is whatever the
+      # scanner actually produces on this commit, not a file that drifted.
+      - name: Produce a CBOM from the sample environment
+        run: |
+          cbom-compass --db "$RUNNER_TEMP/ci.db" scan samples/vulnerable-app \
+            --policy samples/vulnerable-app/crypto-policy.yaml \
+            -o demo-cbom.json --format cbom
+
+      - name: Conformance & evaluator accuracy check
         run: |
           cbom-compass eval --min-recall 0.90
           cbom-compass validate demo-cbom.json
+
+      - name: Upload the CBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbom-${{ matrix.python-version }}
+          path: demo-cbom.json
+          if-no-files-found: warn
+
+  browser:
+    name: Dashboard smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" playwright
+          playwright install --with-deps chromium
+      - name: Render every dashboard view
+        run: pytest -v -m browser

@@ -73,3 +73,39 @@ def test_dependency_refs_resolve_to_components():
     for dep in document["dependencies"]:
         assert dep["ref"] in refs
         assert all(t in refs for t in dep["dependsOn"])
+
+
+def test_pqc_security_category_is_per_parameter_set():
+    """nistQuantumSecurityLevel must be the real NIST category, not a flat 5.
+
+    Every post-quantum algorithm used to report category 5 regardless of its
+    parameters. ML-KEM-768 — the most widely deployed parameter set — is
+    category 3, so the exported CBOM overstated it by two levels in a field
+    other tools read.
+    """
+    from cbom_compass.knowledge.algorithms import pqc_security_category as level
+
+    assert level("ML-KEM", "ML-KEM-512") == 1
+    assert level("ML-KEM", "ML-KEM-768") == 3
+    assert level("ML-KEM", "ML-KEM-1024") == 5
+    assert level("ML-DSA", "ML-DSA-44") == 2
+    assert level("ML-DSA", "ML-DSA-87") == 5
+    assert level("SLH-DSA", "SLH-DSA-SHA2-192s") == 3
+    # An unnamed parameter set asserts nothing rather than claiming the top
+    # category; CycloneDX treats the field as optional.
+    assert level("ML-KEM", None) is None
+    assert level("LMS", "LMS-SHA256") is None
+
+
+def test_exported_bom_names_what_was_scanned():
+    """A workspace directory name tells a reader nothing about the origin."""
+    from cbom_compass import cbom as cbom_mod
+
+    document = cbom_mod.build([], [], {}, {},
+                              target_scope=["source:.cbom-workspace/x-4f2a91bc"],
+                              label="github.com/paramiko/paramiko")
+    assert document["metadata"]["component"]["name"] == "github.com/paramiko/paramiko"
+
+    # Local paths are already meaningful, so they stay when there is no label.
+    plain = cbom_mod.build([], [], {}, {}, target_scope=["source:./my-repo"])
+    assert plain["metadata"]["component"]["name"] == "source:./my-repo"

@@ -45,11 +45,28 @@ Y_RULE_TABLE = {
     ("protocol", "public-api"): 2.5,
     ("protocol", "third-party-saas"): 3.0,
     ("protocol", "embedded"): 5.0,
+    # Hardware-resident keys and certificates are listed explicitly rather than
+    # falling through to DEFAULT_Y, because the related-crypto-material asset
+    # type is what a key object actually is.
+    ("related-crypto-material", "internal-service"): 0.5,
+    ("related-crypto-material", "containerised"): 0.5,
+    ("related-crypto-material", "public-api"): 1.0,
+    ("related-crypto-material", "third-party-saas"): 2.0,
+    ("related-crypto-material", "embedded"): 5.0,
 }
 DEFAULT_SURFACE = "internal-service"
 DEFAULT_Y = 1.5
 
 # Location classes map onto a default deployment surface when untagged.
+#
+# `hardware-module` is the one that is not obvious. A key confined to an HSM or
+# a TPM cannot be re-issued by an application team: the token must first ship
+# firmware that implements ML-KEM or ML-DSA, and that is a vendor release cycle,
+# a re-certification, and a physical change window. That is the same shape of
+# dependency as embedded firmware, so it shares the embedded estimate — an HSM
+# makes a key harder to migrate, not easier, even though it makes it harder to
+# steal. Cloud KMS keys are deliberately *not* treated this way: AWS already
+# exposes ML-DSA parameter sets, so a managed key rotates on request.
 LOCATION_SURFACE = {
     "call-site": "internal-service",
     "manifest": "internal-service",
@@ -57,6 +74,8 @@ LOCATION_SURFACE = {
     "image-layer": "containerised",
     "negotiated": "public-api",
     "key-store": "internal-service",
+    "hardware-module": "embedded",
+    "config": "internal-service",
 }
 
 

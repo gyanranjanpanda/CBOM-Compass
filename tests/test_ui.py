@@ -23,6 +23,11 @@ from cbom_compass.engine import run_scan
 from cbom_compass.policy import Policy
 from cbom_compass.store import Store
 
+# Marked rather than only skipped: CI deselects with `-m "not browser"` in the
+# main matrix and runs a dedicated job that installs a browser, so a missing
+# Playwright can never be mistaken for a passing UI suite.
+pytestmark = pytest.mark.browser
+
 playwright_api = pytest.importorskip("playwright.sync_api")
 
 APP = "samples/vulnerable-app"

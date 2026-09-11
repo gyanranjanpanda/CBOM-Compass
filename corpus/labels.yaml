@@ -120,3 +120,69 @@ files:
 
   - path: go/negative.go
     expected: []
+
+  # ------------------------------------------------------------------ C / C++
+  # Labelled by reading the source. The commented-out EVP_bf_cbc() call in
+  # openssl_evp.c is deliberately absent: dead code is not cryptography in use,
+  # and a finding there would be a false positive.
+  - path: c/openssl_evp.c
+    expected:
+      - {algorithm: AES, key_size: 256, mode: GCM}
+      - {algorithm: 3DES, mode: CBC}
+      - {algorithm: RC4}
+      - {algorithm: MD5}
+      - {algorithm: SHA-1}
+      - {algorithm: SHA-384}
+      - {algorithm: RSA, key_size: 1024, note: "size is the 2nd argument, not the exponent"}
+      - {algorithm: DH, key_size: 2048}
+      - {algorithm: ECDSA, curve: secp256r1, note: "NID_X9_62_prime256v1"}
+
+  - path: c/negative.c
+    expected: []          # negative control — any finding here is a false positive
+
+  - path: c/mbedtls_embedded.c
+    expected:
+      - {algorithm: AES, key_size: 128, note: "key size is the 3rd argument"}
+      - {algorithm: SHA-256}
+      - {algorithm: MD5}
+      - {algorithm: AES, key_size: 256, mode: GCM, note: "MBEDTLS_CIPHER_ constant"}
+      - {algorithm: ECDSA, curve: secp384r1, note: "MBEDTLS_ECP_DP_ group id"}
+
+  - path: c/windows_cng.c
+    expected:
+      - {algorithm: RSA, note: "BCRYPT_RSA_ALGORITHM names no size"}
+      - {algorithm: AES}
+      - {algorithm: SHA-1}
+      - {algorithm: MD5, note: "legacy CryptoAPI CALG_ constant"}
+      - {algorithm: RC4}
+
+  # ------------------------------------------------------------------- C# /.NET
+  - path: csharp/Crypto.cs
+    expected:
+      - {algorithm: RSA, key_size: 1024, note: "constructor argument"}
+      - {algorithm: RSA, key_size: 3072, note: "assigned to .KeySize after Create()"}
+      - {algorithm: MD5}
+      - {algorithm: SHA-1, note: "new SHA1Managed()"}
+      # One AES cipher, created on one line and configured on the next. Two
+      # rules fire on it; it is still one usage, so it is one label.
+      - {algorithm: AES, mode: ECB}
+      - {algorithm: 3DES, note: "TripleDESCryptoServiceProvider"}
+      - {algorithm: ECDSA, curve: secp384r1, note: "ECCurve.NamedCurves.nistP384"}
+      - {algorithm: HMAC}
+
+  - path: csharp/Negative.cs
+    expected: []          # negative control
+
+  # ---------------------------------------------------------------------- Rust
+  - path: rust/crypto.rs
+    expected:
+      - {algorithm: AES, key_size: 256, mode: GCM, note: "Aes256Gcm packs all three"}
+      - {algorithm: ChaCha20, key_size: 256, mode: POLY1305}
+      - {algorithm: MD5}
+      - {algorithm: SHA-1}
+      - {algorithm: SHA-384}
+      - {algorithm: RSA, key_size: 1024}
+      - {algorithm: EdDSA, curve: ed25519, note: "ed25519_dalek"}
+
+  - path: rust/negative.rs
+    expected: []          # negative control

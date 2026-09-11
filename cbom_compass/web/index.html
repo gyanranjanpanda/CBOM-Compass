@@ -145,12 +145,263 @@ button.btn.primary{background:var(--accent);color:var(--bg);border-color:var(--a
 .rec ul{margin:8px 0 0;padding-left:17px;color:var(--ink-faint);font-size:11px;line-height:1.6}
 .mat-draft{color:var(--deprecated);border-color:#4a3a1c}
 .mat-final{color:var(--adequate);border-color:#1f4230}
+
+/* Command-center visual system */
+:root{
+  --bg:#061019; --panel:#0b1822; --panel-2:#0f2230; --line:#1b4050; --line-soft:#12303d;
+  --ink:#e7f7fb; --ink-dim:#8eabb7; --ink-faint:#5d7b88;
+  --accent:#46e7dc; --accent-dim:#1b777b; --cyan:#45cfff; --pink:#ff5fb3;
+  --display:"Arial Narrow", "Avenir Next Condensed", "Segoe UI", sans-serif;
+  --sans:"Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --mono:"SF Mono", "Roboto Mono", ui-monospace, Menlo, monospace;
+}
+body{
+  background:
+    radial-gradient(ellipse at 50% -15%, #123e53 0%, transparent 42%),
+    radial-gradient(ellipse at 100% 55%, #092334 0%, transparent 32%),
+    var(--bg);
+  letter-spacing:.01em;
+}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.16;background-image:linear-gradient(rgba(80,210,230,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(80,210,230,.06) 1px,transparent 1px);background-size:48px 48px;mask-image:linear-gradient(to bottom,#000,transparent 76%);z-index:-1}
+header{padding:14px 30px 13px;background:rgba(5,17,26,.9);border-bottom:1px solid #23576a;box-shadow:0 8px 32px #0006;backdrop-filter:blur(14px)}
+.brand{font-family:var(--display);font-size:16px;letter-spacing:.12em;text-transform:uppercase;color:#f2fdff}.brand .mark{font-size:19px;text-shadow:0 0 14px var(--accent)}.brand small{font-size:10px;letter-spacing:.09em;color:var(--accent);border-left:1px solid var(--line);padding-left:12px}
+nav{gap:5px}nav button{padding:7px 13px;border-radius:3px;font-size:11px;text-transform:uppercase;letter-spacing:.08em}nav button.on{color:#031116;background:var(--accent);box-shadow:0 0 18px #46e7dc55}
+.zbar{padding:10px 30px;background:rgba(8,28,39,.86);border-bottom:1px solid #1b4b5b;top:57px}.zbar label{font-size:11px;text-transform:uppercase;letter-spacing:.08em}.zbar input[type=range]{width:210px}.zval{font-size:16px;text-shadow:0 0 12px var(--accent)}.fixed-clock{font-size:10px;letter-spacing:.05em}
+main{padding:29px 30px 48px;max-width:1680px}
+.hero{position:relative;display:grid;grid-template-columns:1fr auto;gap:22px;align-items:end;margin:0 0 25px;padding:25px 28px 23px;overflow:hidden;border:1px solid #1f6b7b;border-radius:4px;background:linear-gradient(110deg,#0c2735dd,#0a1b27e8 58%,#122b3ae8);box-shadow:inset 0 0 35px #1ed5d410,0 10px 34px #0005}
+.hero:before,.hero:after{content:"";position:absolute;pointer-events:none}.hero:before{inset:8px;border:1px solid #45cfff23;border-radius:2px;clip-path:polygon(0 0,12% 0,12% 2px,88% 2px,88% 0,100% 0,100% 20%,calc(100% - 2px) 20%,calc(100% - 2px) 80%,100% 80%,100% 100%,0 100%,0 80%,2px 80%,2px 20%,0 20%)}.hero:after{width:320px;height:320px;right:-80px;top:-145px;border-radius:50%;border:1px solid #45cfff22;box-shadow:0 0 0 18px #45cfff08,0 0 0 38px #45cfff05}
+.hero .eyebrow{margin:0 0 8px;color:var(--accent);font:600 10px/1 var(--mono);letter-spacing:.2em;text-transform:uppercase}.hero h1{margin:0;color:#f0fcff;font:700 clamp(26px,3vw,42px)/.98 var(--display);letter-spacing:.035em;text-transform:uppercase;text-shadow:0 0 20px #45cfff55}.hero p{margin:10px 0 0;color:var(--ink-dim);font-size:12px;max-width:650px}.hero-meta{position:relative;z-index:1;display:flex;align-items:center;gap:12px;padding:10px 13px;border:1px solid #286276;border-radius:3px;background:#071923bb;font:10px var(--mono);text-transform:uppercase;color:var(--ink-dim);white-space:nowrap}.hero-meta .live{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);animation:pulse 2s infinite}.hero-meta b{color:var(--accent);font-weight:600}@keyframes pulse{50%{opacity:.45}}
+.kpis{gap:10px;margin-bottom:24px}.kpi{position:relative;min-height:98px;padding:15px 16px;border-radius:3px;background:linear-gradient(145deg,#102633,#0a1a25);border:1px solid #1b4b5b;box-shadow:inset 0 1px #4ac8d21a}.kpi:before{content:"";position:absolute;left:0;top:0;width:24px;height:2px;background:var(--accent);box-shadow:0 0 12px var(--accent)}.kpi .n{font-size:28px;text-shadow:0 0 14px currentColor}.kpi .l{font-size:10px;letter-spacing:.1em;text-transform:uppercase}.kpi .note{font-size:9.5px}
+h2{font-family:var(--display);font-size:17px;letter-spacing:.13em;color:#d7f5fa} .sub{font-size:11.5px}
+.grid2{gap:18px}.card{border-radius:3px;border-color:#1b4b5b;background:linear-gradient(145deg,#0d202c,#091720);box-shadow:0 10px 30px #0003,inset 0 1px #54d7ed12}.card h3{font-size:11px;color:#a8d8e2;letter-spacing:.13em}.card .hint{color:#6e929f}
+.tablewrap{border-radius:3px;border-color:#1a4352;background:#08151d}th{background:#0b202b;color:#83b5c1;font-size:10px;letter-spacing:.1em}td{border-bottom-color:#12303d}tbody tr:hover{background:#10303d}
+input,select,button.btn{border-radius:3px;border-color:#245264;background:#0b202b}input::placeholder{color:#557581}button.btn{font-size:11px;letter-spacing:.04em}button.btn.primary{box-shadow:0 0 16px #46e7dc3d}
+.cell{border-radius:3px;border-color:#214c5b;background:#0d2633}.cell:hover{box-shadow:0 0 18px #46e7dc55}.heat{border-spacing:5px}
+#graph{border-radius:3px;border-color:#1f5b6b;background:#07151e;box-shadow:inset 0 0 40px #45cfff0b}
+.panel{background:#081923ee;border-left-color:#2b7482;backdrop-filter:blur(18px)}
+.formula{background:#061118;border-color:#1d4d5c}.note{background:#0d2531;border-color:#1d4b5a}.rec{border-radius:3px;border-color:#1b4b5b;background:#0d202b}
+@media(max-width:760px){header{padding:12px 16px}.zbar{top:53px;padding:9px 16px}main{padding:20px 16px 38px}.hero{grid-template-columns:1fr;padding:20px}.hero-meta{justify-self:start}.fixed-clock{margin-left:0;border-left:0;padding-left:0;width:100%}}
+
+/* Reference-inspired holographic wall: crisp frames, high contrast signals, dense composition. */
+body{background-color:#020a12;background-image:radial-gradient(ellipse at 50% 12%,#16465b 0,#092432 22%,transparent 57%),linear-gradient(180deg,#061520 0%,#02070c 78%)}
+body:after{content:"";position:fixed;inset:0;pointer-events:none;z-index:30;background:repeating-linear-gradient(0deg,transparent 0,transparent 3px,rgba(90,220,240,.025) 4px);mix-blend-mode:screen}
+header{padding:11px 34px;background:linear-gradient(180deg,#091e2cfa,#04111bf2);border-bottom:1px solid #367f92;box-shadow:0 0 0 1px #07131c,0 8px 35px #000a}
+nav button{color:#78a2af;border-color:#163b49;border-radius:2px}nav button.on{background:linear-gradient(180deg,#62fff0,#20a9b5);color:#031017;border-color:#8bfff6;box-shadow:0 0 22px #35ede080}
+.zbar{padding:8px 34px;background:#061724e8;border-bottom:1px solid #276070;box-shadow:0 10px 24px #0007}.zbar input[type=range]{accent-color:var(--pink)}.zval{color:#ff78c1;text-shadow:0 0 14px #ff4fa6}.fixed-clock b{color:#ff79c1}
+main{max-width:1540px;padding:27px 34px 60px;position:relative}
+.hero{min-height:112px;margin-bottom:15px;padding:22px 28px;text-align:center;display:block;border:1px solid #3ca9b9;background:linear-gradient(180deg,#0a2b3bd9,#071923f2);box-shadow:inset 0 0 55px #2fe9ff17,0 0 0 1px #0d2530,0 0 30px #0ac9e51c;clip-path:polygon(0 0,calc(100% - 38px) 0,100% 38px,100% 100%,38px 100%,0 calc(100% - 38px))}
+.hero:before{inset:7px;border:1px solid #4ce8f04d;clip-path:polygon(0 0,18% 0,18% 2px,82% 2px,82% 0,100% 0,100% 18%,calc(100% - 2px) 18%,calc(100% - 2px) 82%,100% 82%,100% 100%,0 100%,0 82%,2px 82%,2px 18%,0 18%)}.hero:after{width:520px;height:520px;right:calc(50% - 260px);top:-290px;border-color:#3defff30;box-shadow:0 0 0 20px #3defff08,0 0 0 45px #3defff06}
+.hero .eyebrow{font-size:9px;letter-spacing:.3em}.hero h1{font-size:clamp(27px,3.3vw,46px);letter-spacing:.09em}.hero p{margin:10px auto 0;max-width:650px;font-size:11px}.hero-meta{position:absolute;right:20px;bottom:17px;padding:5px 8px;font-size:8px;border-color:#277889;background:#06131be0}.hero-meta .live{background:#ff5fb3;box-shadow:0 0 12px #ff5fb3}
+.kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-bottom:15px}.kpi{min-height:76px;padding:11px 13px;border-radius:0;background:linear-gradient(135deg,#0b2734,#07151f);border-color:#24586a;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,0 100%)}.kpi:before{width:40px;height:1px;box-shadow:0 0 10px var(--accent)}.kpi .n{font-size:23px}.kpi .l{font-size:9px}.kpi .note{font-size:8.5px;margin-top:2px}
+.grid2{grid-template-columns:minmax(350px,.86fr) minmax(0,1.14fr);gap:12px}.card{border-radius:0;padding:13px;border-color:#276478;background:linear-gradient(145deg,#0b2633e8,#06131cee);box-shadow:inset 0 0 30px #28c7db0a,0 8px 25px #0008}.card h3{font-size:10px;letter-spacing:.16em;color:#a8f4fa}.card .hint{font-size:10px;margin-bottom:9px}
+.tablewrap{border-radius:0;border-color:#205466}.tablewrap th{padding:7px 9px;background:#0b2834;color:#76d6df;font-size:9px}.tablewrap td{padding:6px 9px;font-size:11px}.tablewrap tbody tr:hover{background:#123d4a}
+.pill{border-radius:1px;font-size:9px;text-transform:uppercase;letter-spacing:.04em}.s-broken,.s-broken_classical{box-shadow:0 0 9px #ff605833}.s-adequate{box-shadow:0 0 8px #4fbf7f22}
+.cell{border-radius:0;min-height:61px;background:#0c2834;border-color:#245466;box-shadow:inset 0 0 18px #37c9dd0a}.cell .n{font-size:18px}.cell .t{font-size:8px}
+h2{font-size:19px;text-shadow:0 0 15px #4ce8f055}.sub{color:#77a5b1}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Transparent holographic glass layer */
+header{background:rgba(4,16,26,.58);backdrop-filter:blur(18px) saturate(135%)}
+.zbar{background:rgba(5,23,35,.42);backdrop-filter:blur(15px) saturate(130%)}
+.hero{background:linear-gradient(135deg,rgba(22,96,116,.30),rgba(6,27,40,.22) 54%,rgba(11,60,74,.28));backdrop-filter:blur(9px) saturate(145%)}
+.hero-meta{background:rgba(4,18,27,.36);backdrop-filter:blur(9px)}
+.kpi{background:linear-gradient(135deg,rgba(14,68,83,.36),rgba(4,19,29,.24));backdrop-filter:blur(8px) saturate(135%)}
+.card{background:linear-gradient(145deg,rgba(11,65,80,.29),rgba(3,17,26,.24));backdrop-filter:blur(8px) saturate(135%)}
+.tablewrap{background:rgba(3,17,26,.22);backdrop-filter:blur(5px)}
+th{background:rgba(10,55,68,.38)}
+input,select,button.btn{background:rgba(10,48,62,.35);backdrop-filter:blur(5px)}
+.cell{background:rgba(10,67,81,.31);backdrop-filter:blur(5px)}
+#graph{background:rgba(2,16,25,.28)}
+.panel{background:rgba(4,24,35,.74)}
+.formula,.note,.rec{background:rgba(5,31,42,.38);backdrop-filter:blur(6px)}
+.err{background:rgba(67,22,24,.46)}
+
+/* ==========================================================================
+   Type layer. One family for reading, one for data. A fixed scale, tracking
+   that tightens as size grows, and uppercase kept to the one place it earns
+   its keep -- table headers. Everything above this rule is decoration.
+   ========================================================================== */
+:root{
+  --sans:ui-sans-serif,system-ui,-apple-system,"SF Pro Text","Segoe UI Variable Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --display:var(--sans);
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Roboto Mono",Menlo,Consolas,monospace;
+  /* 11 · 12 · 13 · 14 · 16 · 20 · 25 · 32 */
+  --t-micro:11px; --t-small:12px; --t-ui:13px; --t-body:14px;
+  --t-lead:16px;  --t-h3:20px;    --t-h2:25px; --t-h1:32px;
+}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:var(--sans);font-size:var(--t-body);font-weight:400;line-height:1.55;
+  letter-spacing:0;color:#e7f7fb;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  font-kerning:normal;font-variant-ligatures:common-ligatures;
+}
+/* Figures line up in columns; that is the whole job of a data table. */
+td,th,.mono,.kpi .n,.cell .n,.zval,.score,.loc,.formula,.badge,.kv dd,
+.tllab,.tl .seg,.ev .m,.fixed-clock,.rec .std{font-variant-numeric:tabular-nums}
+.mono,.formula,.loc,.kv dd,.zval,.score{font-variant-numeric:tabular-nums slashed-zero}
+
+/* No glow, no scanlines, no grid. Text sits on a quiet ground. */
+body:before,body:after,.hero:before,.hero:after{content:none}
+.brand .mark,.zval,.kpi .n,.hero h1,h2,h3{text-shadow:none}
+nav button.on,button.btn.primary,.pill,.s-broken,.s-broken_classical,.s-adequate,
+.cell:hover,.kpi:before{box-shadow:none}
+
+/* Masthead */
+header{font-size:var(--t-ui)}
+.brand{font-family:var(--sans);font-size:15px;font-weight:600;line-height:1.2;letter-spacing:-.006em;text-transform:none;color:#f2fdff}
+.brand .mark{font-size:14px;opacity:.85}
+.brand small{font-family:var(--mono);font-size:var(--t-micro);font-weight:400;letter-spacing:0;text-transform:none;color:var(--ink-faint)}
+nav button{font-family:var(--sans);font-size:var(--t-ui);font-weight:500;letter-spacing:0;text-transform:none;padding:6px 12px}
+nav button.on{font-weight:600}
+
+/* Z bar */
+.zbar label{font-size:var(--t-ui);font-weight:500;letter-spacing:0;text-transform:none;color:var(--ink-dim)}
+.zbar label b{font-weight:600;color:var(--ink)}
+.zval{font-family:var(--mono);font-size:15px;font-weight:600;letter-spacing:-.012em}
+.zwarn{font-size:var(--t-small);font-style:normal;letter-spacing:0;line-height:1.45}
+.fixed-clock{font-family:var(--mono);font-size:var(--t-small);letter-spacing:0}
+
+/* Page header: a heading and a line of orientation, nothing else. */
+.hero{display:block;min-height:0;margin:0 0 26px;padding:0 0 20px;text-align:left;
+  border:0;border-bottom:1px solid var(--line);border-radius:0;clip-path:none;
+  background:none;backdrop-filter:none;box-shadow:none}
+.hero .eyebrow,.hero-meta{display:none}
+.hero h1{margin:0;font-family:var(--sans);font-size:clamp(26px,3.1vw,var(--t-h1));font-weight:600;
+  line-height:1.12;letter-spacing:-.021em;text-transform:none;color:#f2fdff}
+.hero p{margin:10px 0 0;max-width:62ch;font-size:var(--t-lead);line-height:1.5;letter-spacing:-.003em;color:var(--ink-dim)}
+
+/* KPIs: number, then what it counts, then the caveat. */
+.kpis{gap:11px;margin-bottom:22px}
+.kpi{min-height:0;padding:15px 16px}
+.kpi .n{font-family:var(--mono);font-size:28px;font-weight:600;line-height:1.05;letter-spacing:-.022em}
+.kpi .l{margin-top:7px;font-family:var(--sans);font-size:var(--t-ui);font-weight:500;line-height:1.35;letter-spacing:0;text-transform:none;color:var(--ink)}
+.kpi .note{margin-top:4px;padding:0;max-width:none;border:0;border-radius:0;background:none;backdrop-filter:none;
+  font-family:var(--sans);font-size:var(--t-small);font-weight:400;line-height:1.4;letter-spacing:0;color:var(--ink-faint)}
+
+/* Section headings */
+h2{margin:0 0 6px;font-family:var(--sans);font-size:var(--t-h2);font-weight:600;line-height:1.18;
+  letter-spacing:-.018em;text-transform:none;color:#f2fdff}
+.sub{margin:0 0 20px;max-width:70ch;font-size:var(--t-lead);line-height:1.5;letter-spacing:-.003em;color:var(--ink-dim)}
+.card{padding:17px}
+.card h3{margin:0 0 4px;font-size:var(--t-lead);font-weight:600;line-height:1.3;letter-spacing:-.009em;text-transform:none;color:#e7f7fb}
+.card .hint{margin:0 0 14px;max-width:62ch;font-size:var(--t-ui);line-height:1.5;letter-spacing:0;color:var(--ink-dim)}
+/* An empty state inside a card is body copy, not a page subtitle. */
+.card .sub{margin:0;max-width:62ch;font-size:var(--t-ui);line-height:1.55;letter-spacing:0}
+
+/* Tables -- the one uppercase in the system */
+table{font-size:var(--t-ui)}
+th,.tablewrap th{padding:9px 11px;font-family:var(--sans);font-size:var(--t-micro);font-weight:600;
+  letter-spacing:.055em;text-transform:uppercase;color:#83b5c1}
+td,.tablewrap td{padding:9px 11px;font-size:var(--t-ui);line-height:1.45}
+.loc{font-family:var(--mono);font-size:var(--t-small);letter-spacing:-.01em}
+.score{font-family:var(--mono);font-size:var(--t-body);font-weight:600;letter-spacing:-.012em}
+.pill{padding:2px 8px;border-radius:10px;font-family:var(--sans);font-size:var(--t-small);
+  font-weight:500;letter-spacing:0;text-transform:none}
+.pill .ic{font-size:var(--t-micro);font-weight:700}
+
+/* Controls */
+input,select,button.btn{font-family:var(--sans);font-size:var(--t-ui);letter-spacing:0}
+button.btn{font-weight:500}
+button.btn.primary{font-weight:600}
+input[type=search]{min-width:268px;font-family:var(--mono);font-size:var(--t-ui);letter-spacing:-.01em}
+input::placeholder{font-family:var(--sans);letter-spacing:0}
+.chip{font-family:var(--sans);font-size:var(--t-small);font-weight:500;letter-spacing:0}
+
+/* Heat map. The grid has a hard minimum width, so let it scroll inside its
+   card rather than widening the whole page on a phone. */
+#heat-mini,#heat-full{overflow-x:auto}
+.heat th{font-size:var(--t-small);font-weight:500;letter-spacing:0;text-transform:none;color:var(--ink-dim)}
+.cell .n{font-family:var(--mono);font-size:20px;font-weight:600;line-height:1.05;letter-spacing:-.022em}
+.cell{color:var(--ink)}
+.cell .t{font-size:10px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:inherit;opacity:.6}
+/* Drift rows put a name and a path on one baseline; inline-block would raise the path. */
+.ev .loc{display:inline;max-width:none;overflow:visible;white-space:normal;word-break:break-all}
+
+/* Prose blocks: a measure short enough to read in one sweep. */
+.note{max-width:68ch;font-size:var(--t-ui);line-height:1.62;letter-spacing:0}
+.note b{font-weight:600}
+.rationale{max-width:68ch;font-size:var(--t-ui);line-height:1.6}
+.formula{font-family:var(--mono);font-size:var(--t-small);line-height:1.75;letter-spacing:0}
+.legend{font-size:var(--t-small);letter-spacing:0}
+.rec .std{font-family:var(--mono);font-size:var(--t-body);font-weight:600;letter-spacing:-.012em}
+.rec .why{max-width:68ch;font-size:var(--t-ui);line-height:1.6}
+.rec ul{font-size:var(--t-small);line-height:1.65}
+.badge{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.02em}
+
+/* Detail panel */
+.panel{font-size:var(--t-ui)}
+.panel h3{font-family:var(--mono);font-size:var(--t-lead);font-weight:600;letter-spacing:-.012em}
+.rec{padding:15px 18px;margin-bottom:10px}.rec .top{align-items:center}.rec-asset{display:flex;flex-direction:column;gap:4px;min-width:0}.rec-asset .mono{font-size:14px;font-weight:600;color:var(--ink)}.rec-asset .loc{max-width:520px}.rec-target{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap;text-align:right}.rec-target .std{font-size:14px}.rec-target .badge{margin-left:0}
+@media(max-width:760px){.rec .top{align-items:flex-start;flex-direction:column;gap:12px}.rec-target{justify-content:flex-start;text-align:left}.rec-target .std{font-size:13px}}
+.kv{font-size:var(--t-ui)}
+.kv dt{font-weight:400}
+.kv dd{font-family:var(--mono)}
+.ev{font-size:var(--t-small);line-height:1.55}
+.ev .m{font-family:var(--mono);font-size:var(--t-small)}
+.err{font-family:var(--mono);font-size:var(--t-small);line-height:1.5}
+.empty h3{font-size:var(--t-h3);font-weight:600;letter-spacing:-.015em}
+.empty code{font-family:var(--mono);font-size:var(--t-ui)}
+
+/* Same story as above: a later layer restored the two-column minmax(350px,...)
+   after the breakpoint that collapses it, so narrow screens scrolled sideways. */
+@media(max-width:1080px){.grid2{grid-template-columns:minmax(0,1fr)}}
+
+/* --- Scan intake -------------------------------------------------------- */
+.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;padding:34px 20px;text-align:center;cursor:pointer;
+  border:1px dashed var(--line);border-radius:4px;background:rgba(9,40,54,.28);
+  transition:border-color .12s,background .12s}
+.drop:hover,.drop:focus-visible{border-color:var(--accent);background:rgba(12,58,74,.36)}
+.drop.over{border-color:var(--accent);border-style:solid;background:rgba(16,78,96,.5)}
+.drop.busy{opacity:.5;pointer-events:none}
+.drop-mark{font-size:22px;line-height:1;color:var(--accent);margin-bottom:8px}
+.drop-lead{margin:0;font-size:var(--t-lead);font-weight:600;letter-spacing:-.008em;color:var(--ink)}
+.drop-sub{margin:4px 0 0;max-width:44ch;font-size:var(--t-small);line-height:1.5;color:var(--ink-dim)}
+.drop-link{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.fineprint{margin:10px 0 0;font-size:var(--t-small);line-height:1.5;color:var(--ink-faint)}
+.repo-row{display:flex;gap:8px;flex-wrap:wrap}
+.repo-row input{flex:1 1 240px;min-width:0;font-family:var(--mono);letter-spacing:-.01em}
+
+.runstate{margin-top:18px;padding:15px 17px;border:1px solid var(--line);border-radius:4px;
+  background:rgba(5,31,42,.42);display:flex;gap:13px;align-items:flex-start}
+.runstate.fail{border-color:#5c2a26;background:rgba(67,22,24,.4)}
+.runstate.done{border-color:#1f5f47;background:rgba(16,60,45,.34)}
+.runstate .rs-body{min-width:0}
+.runstate h4{margin:0 0 3px;font-size:var(--t-body);font-weight:600;letter-spacing:-.006em;color:var(--ink)}
+.runstate p{margin:0;max-width:64ch;font-size:var(--t-ui);line-height:1.55;color:var(--ink-dim)}
+.runstate .elapsed{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-faint)}
+.runstate.fail h4{color:#ffb0aa}
+.runstate.done h4{color:var(--adequate)}
+
+@media(max-width:760px){
+  /* Layers added after the original mobile rules had re-applied the desktop
+     34px gutters, pushing text off the side of a phone. Restored here. */
+  header{padding:12px 16px;position:static}
+  .zbar{padding:10px 16px;position:static}
+  main{padding:20px 16px 40px}
+  .fixed-clock{margin-left:0;padding-left:0;border-left:0;width:100%}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .heat{border-spacing:4px}
+  .heat th.rh{white-space:normal;font-size:var(--t-micro);padding-right:6px}
+  body{font-size:var(--t-ui)}
+  .brand{font-size:14px}
+  .hero{margin-bottom:20px;padding-bottom:16px}
+  .hero h1{font-size:26px}
+  .hero p,.sub{font-size:15px}
+  h2{font-size:21px}
+  .card h3{font-size:15px}
+  .kpi{padding:14px}
+  .kpi .n{font-size:24px}
+}
+
 </style>
 </head>
 <body>
 <header>
   <div class="brand"><span class="mark">◈</span> CBOM Compass <small id="scanid">no scan</small></div>
   <nav>
+    <button data-v="scan">New scan</button>
     <button data-v="overview" class="on">Overview</button>
     <button data-v="inventory">Inventory</button>
     <button data-v="heat">Risk heat map</button>
@@ -165,14 +416,67 @@ button.btn.primary{background:var(--accent);color:var(--bg);border-color:var(--a
   <label for="z">Q-Day estimate&nbsp;<b>Z</b></label>
   <input type="range" id="z" min="2028" max="2050" value="2035" step="1">
   <span class="zval" id="zval">2035</span>
-  <span class="zwarn">an estimate you set — not a prediction this tool makes</span>
+  <span class="zwarn">an estimate you set, not a prediction</span>
   <span id="zeffect" class="zwarn" style="color:var(--accent);font-style:normal;font-family:var(--mono)"></span>
-  <span class="fixed-clock">fixed clock: NIST IR 8547 deprecates RSA/ECC <b>2030</b> · disallows <b>2035</b></span>
+  <span class="fixed-clock">NIST IR 8547: RSA/ECC deprecated <b>2030</b>, disallowed <b>2035</b></span>
 </div>
 
 <main>
+  <!-- NO SCAN YET: shown in place of any data view until something is scanned -->
+  <section class="view" id="v-noscan">
+    <h2 id="ns-title">Nothing scanned yet</h2>
+    <p class="sub" id="ns-what"></p>
+    <div class="card" style="max-width:70ch">
+      <h3>Start here</h3>
+      <p class="hint">Every view fills in from a single scan. Upload an archive of your
+      codebase, or give a public repository URL.</p>
+      <button class="btn primary" id="ns-go">Scan a codebase</button>
+    </div>
+  </section>
+
+  <!-- NEW SCAN -->
+  <section class="view" id="v-scan">
+    <h2>Scan a codebase</h2>
+    <p class="sub">Upload an archive or point at a public repository. Files are read, never
+    executed, and nothing leaves this server.</p>
+
+    <div class="grid2">
+      <div class="card">
+        <h3>Upload</h3>
+        <p class="hint">A .zip or .tar.gz of your project, or a single source file.</p>
+        <div id="drop" class="drop" tabindex="0" role="button"
+             aria-label="Choose a file to scan, or drop one here">
+          <div class="drop-mark">&#8681;</div>
+          <p class="drop-lead">Drop a file here</p>
+          <p class="drop-sub">or <span class="drop-link">choose one</span> &mdash; zip, tar.gz,
+             or a single .py / .js / .java / .go file</p>
+        </div>
+        <input type="file" id="fileinput" hidden
+               accept=".zip,.tar,.gz,.tgz,.bz2,.xz,.jar,.whl,.py,.js,.ts,.java,.go,.txt,.json,.xml,.yaml,.yml,.lock,.toml">
+        <p class="fineprint" id="uplimits"></p>
+      </div>
+
+      <div class="card">
+        <h3>Public repository</h3>
+        <p class="hint">Shallow clone of the default branch. Public repositories only &mdash;
+        no credentials are accepted.</p>
+        <div class="repo-row">
+          <input type="text" id="repourl" placeholder="github.com/psf/requests"
+                 autocomplete="off" spellcheck="false" aria-label="Repository URL">
+          <button class="btn primary" id="repogo">Scan repository</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="scanstatus"></div>
+  </section>
+
   <!-- OVERVIEW -->
   <section class="view on" id="v-overview">
+    <div class="hero">
+      <h1>Cryptographic posture</h1>
+      <p>What this scan found, and what has to move first.</p>
+    </div>
     <div id="kpis" class="kpis"></div>
     <div id="errs" class="errs"></div>
     <div class="grid2">
@@ -214,7 +518,7 @@ button.btn.primary{background:var(--accent);color:var(--bg);border-color:var(--a
   <!-- HEAT -->
   <section class="view" id="v-heat">
     <h2>Risk heat map</h2>
-    <p class="sub">Move the Z slider above and watch the grid recompute. Nothing here is stale.</p>
+    <p class="sub">Move the Z slider above and the grid recomputes.</p>
     <div class="grid2">
       <div class="card"><div id="heat-full"></div></div>
       <div class="card">
@@ -246,7 +550,7 @@ timing        = max(urgency, compliance, <span class="hl">FLOOR</span>)
   <!-- GRAPH -->
   <section class="view" id="v-graph">
     <h2>Asset graph</h2>
-    <p class="sub">Blast radius: which assets does a break here cascade to? Drag to pan, scroll to zoom, click a node for detail.</p>
+    <p class="sub">Blast radius: what a break here cascades to. Drag to pan, scroll to zoom, click a node for detail.</p>
     <canvas id="graph"></canvas>
     <div class="legend">
       <span><i class="dot" style="background:var(--broken)"></i> broken</span>
@@ -261,7 +565,7 @@ timing        = max(urgency, compliance, <span class="hl">FLOOR</span>)
   <!-- RECOMMENDATIONS -->
   <section class="view" id="v-recs">
     <h2>Recommendations</h2>
-    <p class="sub">Named standards, sequenced by priority. Hybrid by default so a break in either algorithm alone is survivable.</p>
+    <p class="sub">Prioritized migration actions for the assets that need attention first.</p>
     <div class="filters">
       <select id="r-filter">
         <option value="action">needs action</option>
@@ -276,7 +580,7 @@ timing        = max(urgency, compliance, <span class="hl">FLOOR</span>)
   <!-- REPORTS -->
   <section class="view" id="v-reports">
     <h2>Reports and export</h2>
-    <p class="sub">Exports respect the inventory filters, so you can export exactly "broken and high criticality".</p>
+    <p class="sub">Export the current security posture for review, remediation, or compliance.</p>
     <div class="grid2">
       <div class="card">
         <h3>Export</h3>
@@ -353,13 +657,153 @@ async function load(z){
   renderAll(); return REPORT;
 }
 
+// A first-time visitor has nothing to look at, so send them where the work
+// starts. This used to replace main.innerHTML outright, which destroyed every
+// other view and left the app dead until a page reload.
 function renderEmpty(){
-  $('main').innerHTML=`<div class="empty"><h3>No scan yet</h3>
-  <p>Point CBOM Compass at a repository, container image, or endpoint.</p>
-  <p style="margin-top:18px"><code>cbom-compass scan ./your-repo --policy crypto-policy.yaml</code></p>
-  <p style="margin-top:22px;font-size:12px">Or try the bundled sample environment:</p>
-  <p><code>cbom-compass scan samples/vulnerable-app --policy samples/vulnerable-app/crypto-policy.yaml</code></p></div>`;
+  $('#scanid').textContent='no scan yet';
+  show('scan');
+  setStatus('idle','Nothing scanned yet',
+    'Upload an archive or give a public repository URL to build your first inventory.');
 }
+
+/* ------------------------------------------------------------------ intake */
+const MB=1024*1024, UPLOAD_LIMIT_MB=200;
+let RUNNING=false, TICKER=null;
+
+function setStatus(kind,title,detail,retry){
+  const box=$('#scanstatus');
+  if(kind==='clear'){box.innerHTML='';return}
+  const cls=kind==='fail'?' fail':kind==='done'?' done':'';
+  box.innerHTML=`<div class="runstate${cls}">
+    ${kind==='busy'?'<span class="spin"></span>':''}
+    <div class="rs-body"><h4>${esc(title)}</h4><p>${detail}</p>
+    ${retry?'<button class="btn" id="retry" style="margin-top:11px">Try again</button>':''}
+    </div></div>`;
+  if(retry)$('#retry').onclick=retry;
+}
+
+// A scan is a synchronous request that can legitimately run for a minute on a
+// large repository. Showing the elapsed seconds is the difference between
+// "working" and "hung" from the other side of the screen.
+function startTicker(title,what){
+  const t0=Date.now();
+  const tick=()=>{
+    const s=Math.round((Date.now()-t0)/1000);
+    setStatus('busy',title,`${what} <span class="elapsed">${s}s</span>`);
+  };
+  tick(); TICKER=setInterval(tick,1000);
+}
+function stopTicker(){ if(TICKER){clearInterval(TICKER);TICKER=null} }
+
+// A scan with no upper bound leaves the page spinning forever if the server
+// dies mid-request. Ten minutes is longer than any repository we accept can
+// legitimately take, and the abort gives the user a real message instead.
+const SCAN_TIMEOUT_MS=10*60*1000;
+
+// fetch() rejects with a bare TypeError for anything below the HTTP layer, so
+// the failure alone cannot say whether the server died or the connection
+// dropped under a long scan. Asking /api/health settles it, and the two cases
+// need different things from the user.
+async function networkExcuse(err){
+  if(err&&err.name==='AbortError')
+    return `No response after ${SCAN_TIMEOUT_MS/60000} minutes. The repository may be `+
+           `larger than this server can scan in one request.`;
+  if(err instanceof TypeError){
+    let alive=false;
+    try{ alive=(await fetch('/api/health',{cache:'no-store'})).ok }catch{}
+    return alive
+      ? 'The connection dropped before the scan finished, but the server is still '+
+        'running. This usually means the scan outlasted something in between. Retry it.'
+      : 'The server is not responding. Restart it with <code>cbom-compass serve</code>, '+
+        'then retry.';
+  }
+  return esc(err&&err.message?err.message:String(err));
+}
+
+// Whatever the last attempt was, so the error state can offer it again without
+// making the user retype a URL or re-pick a file.
+let LAST_ATTEMPT=null;
+
+async function runScan(title,what,request){
+  if(RUNNING)return;
+  RUNNING=true; $('#drop').classList.add('busy'); $('#repogo').disabled=true;
+  startTicker(title,what);
+  const abort=new AbortController();
+  const timer=setTimeout(()=>abort.abort(),SCAN_TIMEOUT_MS);
+  try{
+    const r=await request(abort.signal);
+    let body=null; try{ body=await r.json() }catch{}
+    if(!r.ok){
+      const why=(body&&body.detail)||`the server returned ${r.status}`;
+      stopTicker(); setStatus('fail','Scan failed',esc(String(why)));
+      return;
+    }
+    stopTicker();
+    await load();                      // pick the new scan up as the current report
+    const k=body.kpis, st=k.by_status||{};
+    const broken=(st.broken||0)+(st.broken_classical||0);
+    const origin=(body.run&&body.run.label)||'the upload';
+    setStatus('done',`Scanned ${origin}`,
+      `${k.total_assets} cryptographic assets, ${broken} broken, `+
+      `${st.deprecated_insufficient||0} deprecated. Showing the results now.`);
+    show('overview');
+  }catch(err){
+    stopTicker();
+    setStatus('fail','Scan failed',await networkExcuse(err),
+              LAST_ATTEMPT?()=>LAST_ATTEMPT():null);
+  }finally{
+    clearTimeout(timer);
+    RUNNING=false; $('#drop').classList.remove('busy'); $('#repogo').disabled=false;
+  }
+}
+
+function uploadFile(file){
+  if(!file)return;
+  if(file.size>UPLOAD_LIMIT_MB*MB){
+    setStatus('fail','File too large',
+      `${esc(file.name)} is ${(file.size/MB).toFixed(0)} MB. The limit is ${UPLOAD_LIMIT_MB} MB.`);
+    return;
+  }
+  const form=new FormData(); form.append('file',file,file.name);
+  LAST_ATTEMPT=()=>uploadFile(file);
+  runScan(`Scanning ${file.name}`,'Reading and classifying',
+          signal=>fetch('/api/scan/upload',{method:'POST',body:form,signal}));
+}
+
+function scanRepo(url){
+  if(!url.trim()){ setStatus('fail','No repository given','Enter a URL such as github.com/psf/requests.'); return }
+  LAST_ATTEMPT=()=>scanRepo(url);
+  runScan(`Scanning ${url.trim()}`,'Cloning and classifying',
+          signal=>fetch('/api/scan/repo',{method:'POST',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({url:url.trim()}),signal}));
+}
+
+(function wireIntake(){
+  const drop=$('#drop'), input=$('#fileinput');
+  $('#uplimits').textContent=
+    `Up to ${UPLOAD_LIMIT_MB} MB per upload. Archives are expanded with symlinks removed and `+
+    `entries that point outside the archive refused.`;
+  drop.onclick=()=>input.click();
+  drop.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();input.click()} };
+  input.onchange=()=>{ uploadFile(input.files[0]); input.value=''; };
+
+  const stop=e=>{e.preventDefault();e.stopPropagation()};
+  ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{stop(e);drop.classList.add('over')}));
+  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{stop(e);drop.classList.remove('over')}));
+  drop.addEventListener('drop',e=>{
+    const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
+    if(f)uploadFile(f);
+  });
+  // Without this the browser navigates away from the app when a file is
+  // dropped anywhere outside the target.
+  ['dragover','drop'].forEach(ev=>addEventListener(ev,e=>e.preventDefault()));
+
+  $('#ns-go').onclick=()=>show('scan');
+  $('#repogo').onclick=()=>scanRepo($('#repourl').value);
+  $('#repourl').addEventListener('keydown',e=>{ if(e.key==='Enter')scanRepo($('#repourl').value) });
+})();
 
 function renderAll(){renderKPIs();renderZPin();renderErrors();renderHeat('#heat-mini',true);renderHeat('#heat-full',false);renderTop10();renderInventory();renderRecs();renderDrift();G.loaded=false;}
 
@@ -592,15 +1036,11 @@ function renderRecs(){
   $('#reccount').textContent=`${rows.length} assets`;
   $('#recs').innerHTML=rows.slice(0,120).map(a=>{const r=a.recommendation;return `
     <div class="rec"><div class="top">
-      <div><span class="mono" style="font-weight:600">${esc(a.name)}</span>
-        <span class="loc" style="margin-left:8px">${esc(a.location)}</span></div>
-      <div><span class="std">${esc(r.standard)} → ${esc(r.algorithm)}</span>
+      <div class="rec-asset"><span class="mono">${esc(a.name)}</span><span class="loc">${esc(a.location)}</span></div>
+      <div class="rec-target"><span class="std">${esc(r.standard)} → ${esc(r.algorithm)}</span>
         <span class="badge mat-${r.maturity}">${esc(r.maturity)}</span>
         ${r.hybrid?'<span class="badge">hybrid</span>':''}
         <span class="badge">score ${a.score.toFixed(2)}</span></div></div>
-      <div class="why">${esc(r.rationale)}</div>
-      ${r.notes&&r.notes.length?`<ul>${r.notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}
-      <div style="margin-top:8px;font-size:11px;color:var(--ink-faint)">rotation cost: ${esc(r.rotation_cost)} · support maturity: ${esc(r.support_maturity)}</div>
     </div>`}).join('')||'<p class="sub">Nothing matches.</p>';
 }
 
@@ -776,33 +1216,83 @@ async function renderSettings(){
     '<tr><td colspan="4" class="sub">empty</td></tr>')+'</tbody></table></div>';
 }
 
+// History is only useful if you can tell the scans apart and go back to one,
+// so it leads with what was scanned rather than the scan id, and every row
+// loads that snapshot.
 async function renderScans(){
   const rows=await(await fetch('/api/scans')).json();
-  $('#scans').innerHTML=`<div class="tablewrap"><table><thead><tr><th>scan</th><th>started</th>
-    <th>by</th><th>sources</th><th>assets</th><th>targets</th></tr></thead><tbody>`+
-    rows.map((r,i)=>`<tr><td class="mono" style="color:${i?'var(--ink-dim)':'var(--accent)'}">${esc(r.scan_id)}${i?'':' ·current'}</td>
-      <td class="mono" style="font-size:11px">${esc(r.started_at)}</td>
-      <td class="mono">${esc(r.initiated_by||'—')}</td>
-      <td style="font-size:11px">${r.sources.join(', ')||'—'}</td>
-      <td class="mono">${r.asset_count}</td>
-      <td class="loc" title="${esc(r.targets.join(' '))}">${esc(r.targets.join(' '))}</td></tr>`).join('')+
+  if(!rows.length){ $('#scans').innerHTML='<p class="sub">No scans yet.</p>'; return }
+  const current=REPORT&&REPORT.run?REPORT.run.scan_id:null;
+  $('#scans').innerHTML=`<div class="tablewrap"><table><thead><tr>
+      <th>scanned</th><th>when</th><th>by</th><th>assets</th><th>broken</th><th>scan</th>
+    </tr></thead><tbody>`+
+    rows.map(r=>{
+      const origin=r.label||(r.targets[0]||'').split(':').slice(1).join(':')||'—';
+      const icon=r.origin_kind==='repo'?'⎇':r.origin_kind==='upload'?'⭱':'▪';
+      const on=r.scan_id===current;
+      return `<tr data-scan="${esc(r.scan_id)}" title="Load this scan">
+        <td><span style="color:var(--ink-faint)">${icon}</span> ${esc(origin)}
+          ${on?'<span class="badge tagged">showing</span>':''}</td>
+        <td class="mono" style="font-size:12px">${esc((r.started_at||'').replace('T',' ').replace('+00:00',''))}</td>
+        <td class="mono">${esc(r.initiated_by||'—')}</td>
+        <td class="mono">${r.asset_count}</td>
+        <td class="mono" style="color:${r.broken?'var(--broken)':'var(--ink-faint)'}">${r.broken||0}</td>
+        <td class="mono" style="color:var(--ink-faint)">${esc(r.scan_id)}</td></tr>`;
+    }).join('')+
     '</tbody></table></div>';
+  $$('#scans tbody tr').forEach(tr=>tr.onclick=()=>loadScan(tr.dataset.scan));
+}
+
+// Loading an older snapshot re-renders every view from it. The Z slider still
+// rescores it live, because rescoring never re-runs the scanners.
+async function loadScan(scanId){
+  const r=await fetch(`/api/report?scan=${encodeURIComponent(scanId)}`);
+  if(!r.ok){ setStatus('fail','Could not load that scan',`the server returned ${r.status}`); return }
+  REPORT=await r.json();
+  Z=REPORT.policy.z_year; $('#z').value=Z; $('#zval').textContent=Z;
+  $('#scanid').textContent='scan '+REPORT.run.scan_id;
+  $('#zeffect').textContent=`${REPORT.kpis.z_sensitive}/${REPORT.kpis.total_assets} scores move with Z`;
+  renderAll(); renderScans(); show('overview');
 }
 
 async function renderValidation(){
   const v=await(await fetch('/api/validate')).json();
   $('#validation').innerHTML=`<div style="font-size:22px;font-family:var(--mono);color:${v.valid?'var(--adequate)':'var(--broken)'};font-weight:600">
     ${v.valid?'✓ valid':'✕ '+v.errors.length+' error(s)'}</div>
-    <div class="sub" style="margin-top:6px">CycloneDX ${esc(v.spec_version)} · ${v.components} cryptographic-asset components</div>
+    <div class="sub" style="margin-top:6px">CycloneDX ${esc(v.spec_version)} · ${v.components} cryptographic assets</div>
     ${v.errors.length?`<div class="err">${v.errors.slice(0,8).map(esc).join('<br>')}</div>`:
-      `<div class="note">Emitted against <b>CycloneDX 1.7</b>, ratified as <b>ECMA-424 2nd Edition</b>
-       (Dec 2025). Algorithm names are normalised through the 1.7 Cryptography Registry;
-       <code>nistQuantumSecurityLevel</code> is populated as a native schema field rather than
-       duplicated into our extension namespace.</div>`}`;
+      `<div class="note">The exported CBOM passed schema validation and is ready to share.</div>`}`;
 }
+
+// What each tab will hold once there is data. Shown instead of an empty table,
+// because a blank grid does not tell a first-time user what the tab is for.
+const VIEW_HELP={
+  overview:['Overview','Headline counts once a scan exists: how many cryptographic assets '+
+            'were found, how many are broken, deprecated or adequate, and which are exposed '+
+            'to harvest-now-decrypt-later.'],
+  inventory:['Inventory explorer','Every discovered asset as a filterable table — algorithm, '+
+             'key size, file and line, detection confidence. Click a row for the evidence.'],
+  heat:['Risk heat map','Criticality against urgency as a grid, recomputed live as you move '+
+        'the Q-Day slider.'],
+  graph:['Asset graph','Which assets a break would cascade to, drawn as a graph.'],
+  recs:['Recommendations','A named replacement standard for each finding, sequenced by '+
+        'priority — hybrid by default.'],
+  reports:['Reports and export','CycloneDX 1.7 CBOM, PDF risk summary and CSV, plus the '+
+           'history of every scan you have run.'],
+  settings:['Settings','Q-Day estimate, criticality weights, service tags and the scan '+
+            'allowlist. These change every score in the system.'],
+};
 
 function show(v){
   $$('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  // Settings and history are meaningful with no scan; the data views are not.
+  if(!REPORT && VIEW_HELP[v] && v!=='settings'){
+    const [title,what]=VIEW_HELP[v];
+    $('#ns-title').textContent=title;
+    $('#ns-what').textContent=what;
+    $$('.view').forEach(s=>s.classList.toggle('on',s.id==='v-noscan'));
+    return;
+  }
   $$('.view').forEach(s=>s.classList.toggle('on',s.id==='v-'+v));
   if(v==='settings')renderSettings();
   if(v==='reports'){renderValidation();renderScans();}

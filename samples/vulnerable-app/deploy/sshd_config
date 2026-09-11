@@ -1,0 +1,21 @@
+# Jump host for the payments estate.
+# Deliberately mixed: a migrated hybrid key exchange sitting alongside
+# algorithms that should have been retired years ago.
+Port 22
+Protocol 2
+
+# mlkem768x25519-sha256 is the migrated one. Both halves are inventoried, and
+# the classical half must NOT be reported as urgent because of it.
+KexAlgorithms mlkem768x25519-sha256,sntrup761x25519-sha512@openssh.com,curve25519-sha256,ecdh-sha2-nistp256,diffie-hellman-group14-sha1
+
+# ssh-rsa is RSA-with-SHA-1, which is a different finding from rsa-sha2-512.
+HostKeyAlgorithms rsa-sha2-512,rsa-sha2-256,ssh-ed25519,ecdsa-sha2-nistp256,ssh-rsa
+
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-ctr,3des-cbc
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256,hmac-sha1
+
+# A removal list. These are being disabled, so they are not in the inventory.
+PubkeyAcceptedAlgorithms -ssh-dss
+
+PermitRootLogin no
+PasswordAuthentication no

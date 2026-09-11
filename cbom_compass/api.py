@@ -11,14 +11,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import Body, FastAPI, Header, HTTPException, Query
+from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import (FileResponse, JSONResponse, PlainTextResponse,
                                Response)
 from fastapi.staticfiles import StaticFiles
 
 from . import cbom as cbom_mod
 from . import recommend, risk
-from .engine import ScanReport, diff, run_scan
+from .engine import PATH_SCANNERS, ScanReport, diff, run_scan
+from .ingest import (MAX_UPLOAD_BYTES, IngestError, Ingested, ingest_repo,
+                     ingest_upload, prune_workspace, resolve_workspace)
 from .inventory import Inventory
 from .models import Asset, ScanRun
 from .policy import Policy
@@ -46,10 +48,13 @@ def _require(role: str, permission: str) -> None:
 
 
 def create_app(db_path: str | Path = DEFAULT_DB,
-               policy_path: str | None = None) -> FastAPI:
+               policy_path: str | None = None,
+               workspace: str | Path | None = None,
+               keep_workspaces: int = 20) -> FastAPI:
     app = FastAPI(title="CBOM Compass", version="0.1.0")
     store = Store(db_path)
     state: dict[str, Any] = {"policy": Policy.load(policy_path), "policy_path": policy_path}
+    work_root = resolve_workspace(workspace)   # created on first scan, not at import
 
     def current_report() -> dict:
         document = store.latest()
@@ -104,6 +109,17 @@ def create_app(db_path: str | Path = DEFAULT_DB,
     def index() -> FileResponse:
         return FileResponse(WEB_DIR / "index.html")
 
+    @app.get("/api/health")
+    def health() -> dict:
+        """Cheap liveness probe. Touches no database and runs no scan.
+
+        The dashboard calls this when a scan request fails at the network
+        layer, so it can tell "the server is gone" apart from "the connection
+        dropped mid-scan but the server is fine" — two problems with very
+        different fixes, which the UI previously reported as the same thing.
+        """
+        return {"ok": True, "scans": len(store.list_scans(limit=1)) > 0}
+
     # ---------------------------------------------------------------- data
     @app.get("/api/report")
     def get_report(z: int | None = Query(None, description="override quantum-arrival year"),
@@ -121,18 +137,73 @@ def create_app(db_path: str | Path = DEFAULT_DB,
         _require(x_role, "scan")
         targets: dict[str, list[str]] = {}
         for path in body.get("paths", []):
-            for name in ("source", "dependencies", "binary"):
+            for name in PATH_SCANNERS:
                 targets.setdefault(name, []).append(path)
         if body.get("containers"):
             targets["container"] = body["containers"]
         if body.get("endpoints"):
             targets["tls"] = body["endpoints"]
+        if body.get("ssh_endpoints"):
+            targets["ssh"] = body["ssh_endpoints"]
+        if body.get("key_stores"):
+            targets["cloud"] = body["key_stores"]
         if not targets:
-            raise HTTPException(400, "provide at least one of paths, containers, endpoints")
+            raise HTTPException(
+                400, "provide at least one of paths, containers, endpoints, "
+                     "ssh_endpoints, key_stores")
         report = run_scan(targets, state["policy"], initiated_by=x_user)
         document = report.to_dict()
         store.save(document)
         return document
+
+    def scan_tree(source: Ingested, user: str) -> dict:
+        """Run every path scanner over an ingested tree and store the result.
+
+        The workspace path is what goes into target_scope, because that is what
+        `cbom-compass verify` re-opens to prove a finding was not invented. The
+        origin the user recognises travels separately in `label`.
+        """
+        targets = {name: [str(source.root)] for name in PATH_SCANNERS}
+        report = run_scan(targets, state["policy"], initiated_by=user,
+                          label=source.label)
+        document = report.to_dict()
+        document["run"]["origin"] = {
+            "kind": source.kind, "label": source.label,
+            "files": source.file_count, "bytes": source.byte_count,
+        }
+        store.save(document)
+        prune_workspace(work_root, keep=keep_workspaces)
+        return document
+
+    @app.post("/api/scan/upload")
+    async def post_scan_upload(file: UploadFile = File(...),
+                               x_role: str = Header("engineer"),
+                               x_user: str = Header("demo")) -> dict:
+        """Scan an uploaded archive or single source file."""
+        _require(x_role, "scan")
+        # Read with a hard ceiling rather than trusting content-length: the
+        # header is client-supplied and a chunked body has none at all.
+        payload = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(payload) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"upload exceeds the "
+                                     f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit")
+        try:
+            source = ingest_upload(payload, file.filename or "upload", work_root)
+        except IngestError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return scan_tree(source, x_user)
+
+    @app.post("/api/scan/repo")
+    def post_scan_repo(body: dict = Body(...),
+                       x_role: str = Header("engineer"),
+                       x_user: str = Header("demo")) -> dict:
+        """Clone a public repository and scan it."""
+        _require(x_role, "scan")
+        try:
+            source = ingest_repo(str(body.get("url", "")), work_root)
+        except IngestError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return scan_tree(source, x_user)
 
     @app.get("/api/heatmap")
     def get_heatmap(z: int | None = None) -> dict:
@@ -315,7 +386,8 @@ def create_app(db_path: str | Path = DEFAULT_DB,
         risks = risk.classify_all(assets, policy)
         recos = recommend.recommend_all(assets, risks, relationships, policy)
         payload = cbom_mod.build(assets, relationships, risks, recos,
-                                 document["run"]["target_scope"])
+                                 document["run"]["target_scope"],
+                                 label=document["run"].get("label", ""))
         store.audit(x_user, "export",
                     f"cbom: {len(assets)} components "
                     f"(filters status={status or '*'} criticality={criticality or '*'})")
@@ -392,7 +464,8 @@ def create_app(db_path: str | Path = DEFAULT_DB,
         policy.z_year = document["policy"]["z_year"]
         risks = risk.classify_all(assets, policy)
         payload = cbom_mod.build(assets, relationships, risks, {},
-                                 document["run"]["target_scope"])
+                                 document["run"]["target_scope"],
+                                 label=document["run"].get("label", ""))
         errors = cbom_mod.validate(payload)
         return {"spec_version": payload["specVersion"], "components": len(payload["components"]),
                 "valid": not errors, "errors": errors}

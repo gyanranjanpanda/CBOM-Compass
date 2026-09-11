@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,61 +53,91 @@ class Store:
         self.path = Path(path)
         self.conn = sqlite3.connect(self.path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
-        self.conn.executescript(SCHEMA)
-        self.conn.commit()
+        # One connection shared across uvicorn's worker threads. sqlite3
+        # objects are not safe for concurrent use, and two scans finishing
+        # together raised "InterfaceError: bad parameter or other API misuse"
+        # from inside audit(). Every statement below goes through this lock.
+        self._lock = threading.RLock()
+        # WAL lets the dashboard keep reading while a scan is being written.
+        with self._lock:
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA busy_timeout=5000")
+            self.conn.executescript(SCHEMA)
+            self.conn.commit()
 
     # ---------------------------------------------------------------- scans
     def save(self, report_dict: dict) -> str:
         run = report_dict["run"]
-        self.conn.execute(
-            "INSERT OR REPLACE INTO scans VALUES (?,?,?,?,?,?,?,?)",
-            (run["scan_id"], run["started_at"], run["finished_at"], run["initiated_by"],
-             json.dumps(run["sources_covered"]), json.dumps(run["target_scope"]),
-             run["asset_count"], json.dumps(report_dict)),
-        )
-        self.conn.commit()
-        self.audit(run["initiated_by"], "scan.completed",
-                   f"{run['scan_id']}: {run['asset_count']} assets over "
-                   f"{','.join(run['sources_covered'])}")
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO scans VALUES (?,?,?,?,?,?,?,?)",
+                (run["scan_id"], run["started_at"], run["finished_at"], run["initiated_by"],
+                 json.dumps(run["sources_covered"]), json.dumps(run["target_scope"]),
+                 run["asset_count"], json.dumps(report_dict)),
+            )
+            self.conn.commit()
+            self.audit(run["initiated_by"], "scan.completed",
+                       f"{run['scan_id']}: {run['asset_count']} assets over "
+                       f"{','.join(run['sources_covered'])}")
         return run["scan_id"]
 
     def get(self, scan_id: str) -> dict | None:
-        row = self.conn.execute(
-            "SELECT document FROM scans WHERE scan_id=?", (scan_id,)).fetchone()
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT document FROM scans WHERE scan_id=?", (scan_id,)).fetchone()
         return json.loads(row["document"]) if row else None
 
     def latest(self) -> dict | None:
-        row = self.conn.execute(
-            "SELECT document FROM scans ORDER BY started_at DESC, rowid DESC LIMIT 1").fetchone()
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT document FROM scans "
+                "ORDER BY started_at DESC, rowid DESC LIMIT 1").fetchone()
         return json.loads(row["document"]) if row else None
 
     def previous(self, scan_id: str) -> dict | None:
-        row = self.conn.execute(
-            "SELECT document FROM scans WHERE rowid < "
-            "(SELECT rowid FROM scans WHERE scan_id=?) ORDER BY rowid DESC LIMIT 1",
-            (scan_id,)).fetchone()
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT document FROM scans WHERE rowid < "
+                "(SELECT rowid FROM scans WHERE scan_id=?) ORDER BY rowid DESC LIMIT 1",
+                (scan_id,)).fetchone()
         return json.loads(row["document"]) if row else None
 
     def list_scans(self, limit: int = 50) -> list[dict]:
-        rows = self.conn.execute(
-            "SELECT scan_id, started_at, finished_at, initiated_by, sources, targets, "
-            "asset_count FROM scans ORDER BY started_at DESC, rowid DESC LIMIT ?",
-            (limit,)).fetchall()
+        """Scan history, newest first.
+
+        `label` and `origin` are read out of the stored document with
+        json_extract rather than promoted to columns, so history for scans
+        written before those fields existed still lists (as NULL) instead of
+        needing a migration.
+        """
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT scan_id, started_at, finished_at, initiated_by, sources, targets, "
+                "asset_count, "
+                "json_extract(document, '$.run.label') AS label, "
+                "json_extract(document, '$.run.origin.kind') AS origin_kind, "
+                "json_extract(document, '$.kpis.by_status.broken') AS broken, "
+                "json_extract(document, '$.kpis.by_status.broken_classical') AS broken_classical "
+                "FROM scans ORDER BY started_at DESC, rowid DESC LIMIT ?",
+                (limit,)).fetchall()
         return [
-            {**dict(r), "sources": json.loads(r["sources"]), "targets": json.loads(r["targets"])}
+            {**dict(r), "sources": json.loads(r["sources"]), "targets": json.loads(r["targets"]),
+             "broken": (r["broken"] or 0) + (r["broken_classical"] or 0)}
             for r in rows
         ]
 
     # ---------------------------------------------------------------- audit
     def audit(self, principal: str, action: str, detail: str = "") -> None:
-        self.conn.execute(
-            "INSERT INTO audit VALUES (?,?,?,?)",
-            (datetime.now(timezone.utc).isoformat(timespec="seconds"),
-             principal, action, detail),
-        )
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO audit VALUES (?,?,?,?)",
+                (datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                 principal, action, detail),
+            )
+            self.conn.commit()
 
     def audit_log(self, limit: int = 100) -> list[dict]:
-        rows = self.conn.execute(
-            "SELECT * FROM audit ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM audit ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
         return [dict(r) for r in rows]

@@ -15,6 +15,8 @@ AES-256/SHA-384 is required it surfaces as a CNSA 2.0 policy flag instead.
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass
 
 from ..models import QuantumStatus
@@ -44,12 +46,23 @@ ALIASES = {
     # JCA names the EC keypair algorithm just "EC".
     "ec": "ECDSA", "ecc": "ECDSA",
     "des": "DES", "rc4": "RC4", "arcfour": "RC4", "blowfish": "Blowfish", "rc2": "RC2",
+    # OpenSSL and mbedTLS short names.
+    "arc4": "RC4", "bf": "Blowfish", "md4": "MD4",
     "chacha20": "ChaCha20",
+    # Block ciphers that turn up in IPsec proposals and OpenSSL suite lists.
+    "cast5": "CAST5", "cast128": "CAST5", "cast": "CAST5",
+    "seed": "SEED", "camellia": "Camellia", "idea": "IDEA",
+    # Post-quantum KEMs that are deployed but not NIST selections.
+    "frodokem": "FrodoKEM", "frodo": "FrodoKEM", "ntru": "NTRU",
     "md5": "MD5", "md4": "MD4", "sha1": "SHA-1", "sha-1": "SHA-1",
     "sha256": "SHA-256", "sha-256": "SHA-256", "sha384": "SHA-384", "sha-384": "SHA-384",
     "sha512": "SHA-512", "sha-512": "SHA-512", "sha224": "SHA-224",
     "sha3-256": "SHA3-256", "sha3-512": "SHA3-512", "blake2b": "BLAKE2b",
     "ml-kem": "ML-KEM", "kyber": "ML-KEM", "mlkem": "ML-KEM",
+    # Streamlined NTRU Prime. Not a NIST selection, but OpenSSH has shipped it
+    # as the default half of its hybrid key exchange since 8.5, so a real SSH
+    # fleet is full of it and calling it "unknown" would be the wrong answer.
+    "sntrup761": "sntrup761", "sntrup4591761": "sntrup761", "ntruprime": "sntrup761",
     "ml-dsa": "ML-DSA", "dilithium": "ML-DSA", "mldsa": "ML-DSA",
     "slh-dsa": "SLH-DSA", "sphincs+": "SLH-DSA", "sphincs": "SLH-DSA",
     "fn-dsa": "FN-DSA", "falcon": "FN-DSA", "hqc": "HQC",
@@ -62,6 +75,17 @@ ALIASES = {
     "eddsa-jose": "EdDSA",
     "pbkdf2": "PBKDF2", "bcrypt": "bcrypt", "scrypt": "scrypt", "argon2": "Argon2",
     "hmac": "HMAC",
+    "umac": "UMAC", "umac-64": "UMAC", "umac-128": "UMAC", "poly1305": "Poly1305",
+    # Protocol names. These are containers: the risk lives in the algorithms
+    # they negotiate, which are inventoried separately.
+    "ssh": "SSH-2.0", "ssh-2.0": "SSH-2.0", "ssh2": "SSH-2.0",
+    # "ssh-1" must be listed: the longest-prefix fallback would otherwise strip
+    # it to "ssh" and report SSH protocol 1 as SSH-2.0 — upgrading a broken
+    # protocol to a sound one, which is the wrong direction to be wrong in.
+    "ssh-1": "SSH-1", "ssh-1.5": "SSH-1", "ssh-1.99": "SSH-2.0", "ssh1": "SSH-1",
+    "ipsec": "IPsec", "ike": "IPsec", "ikev2": "IPsec", "esp": "IPsec",
+    "openvpn": "OpenVPN", "wireguard": "WireGuard",
+    "smime": "S/MIME", "s/mime": "S/MIME", "cms": "S/MIME",
 }
 
 PRIMITIVE = {
@@ -77,10 +101,58 @@ PRIMITIVE = {
     "ML-DSA": "signature", "SLH-DSA": "signature", "FN-DSA": "signature",
     "LMS": "signature", "XMSS": "signature",
     "PBKDF2": "kdf", "bcrypt": "kdf", "scrypt": "kdf", "Argon2": "kdf", "HMAC": "mac",
+    "UMAC": "mac", "Poly1305": "mac", "sntrup761": "kem",
+    "SSH-2.0": "protocol", "SSH-1": "protocol", "IPsec": "protocol",
+    "OpenVPN": "protocol", "WireGuard": "protocol", "S/MIME": "protocol",
+    "CAST5": "block-cipher", "SEED": "block-cipher", "Camellia": "block-cipher",
+    "IDEA": "block-cipher", "FrodoKEM": "kem", "NTRU": "kem",
 }
 
 # PQC algorithms — quantum-resistant by construction.
-PQC = {"ML-KEM", "ML-DSA", "SLH-DSA", "FN-DSA", "HQC", "LMS", "XMSS"}
+PQC = {"ML-KEM", "ML-DSA", "SLH-DSA", "FN-DSA", "HQC", "LMS", "XMSS",
+       "sntrup761", "FrodoKEM", "NTRU"}
+
+# Quantum-resistant, but not a NIST standard. These still remove the
+# harvest-now-decrypt-later exposure — which is the point — so they must not be
+# scored as broken. They do not satisfy a FIPS or CNSA 2.0 obligation, so they
+# are flagged rather than waved through.
+PQC_NON_STANDARDISED = {"sntrup761", "FrodoKEM", "NTRU"}
+
+# Protocols whose risk is entirely delegated to the algorithms they negotiate.
+CONTAINER_PROTOCOLS = {"SSH-2.0", "IPsec", "OpenVPN", "WireGuard", "S/MIME"}
+
+# NIST security category per parameter set (FIPS 203/204/205, and the HQC and
+# FN-DSA selections). Every post-quantum algorithm used to be reported at
+# category 5 regardless of its parameters, which overstated the most widely
+# deployed one — ML-KEM-768 is category 3 — by two levels. That number leaves
+# the tool as `nistQuantumSecurityLevel`, a CycloneDX field other systems read,
+# so it has to be the real category rather than a flattering default.
+PQC_SECURITY_CATEGORY = {
+    "ML-KEM": {512: 1, 768: 3, 1024: 5},
+    "ML-DSA": {44: 2, 65: 3, 87: 5},
+    "SLH-DSA": {128: 1, 192: 3, 256: 5},
+    "FN-DSA": {512: 1, 1024: 5},
+    "HQC": {128: 1, 192: 3, 256: 5},
+    # LMS and XMSS are stateful hash-based schemes whose strength comes from the
+    # chosen tree and hash parameters, not a named category. Left unmapped.
+}
+
+
+def pqc_security_category(algorithm: str, parameter_set: str | None) -> int | None:
+    """NIST category for a post-quantum parameter set, or None if unknown.
+
+    None is the honest answer for an unnamed parameter set: CycloneDX treats
+    `nistQuantumSecurityLevel` as optional, so omitting it says "not determined"
+    where a number would assert something the scan never established.
+    """
+    table = PQC_SECURITY_CATEGORY.get(algorithm)
+    if not table or not parameter_set:
+        return None
+    for token in re.findall(r"\d+", str(parameter_set)):
+        level = table.get(int(token))
+        if level is not None:
+            return level
+    return None
 
 
 @dataclass
@@ -152,6 +224,28 @@ def classify(algorithm: str, key_size: int | None = None,
             3, [] if version == "1.3" else ["cnsa2_noncompliant"], adv,
         )
 
+    # Protocols that are containers rather than algorithms. Their exposure is
+    # carried entirely by what they negotiate — the key exchange, host key,
+    # cipher and MAC are all separate assets — so scoring the container as well
+    # would double-count every one of them. Reported, and deliberately not
+    # scored, exactly as TLS 1.2/1.3 are above.
+    if algo in CONTAINER_PROTOCOLS:
+        return Classification(
+            algo, "protocol", QuantumStatus.ADEQUATE,
+            f"{algo} is a protocol container. Its quantum exposure lives in the key "
+            f"exchange, host key, cipher and MAC it negotiates, each of which is "
+            f"inventoried as a separate asset and scored there.",
+            None, [], adv,
+        )
+    if algo == "SSH-1":
+        return Classification(
+            algo, "protocol", QuantumStatus.BROKEN_CLASSICAL,
+            "SSH protocol 1 is broken by practical classical attacks (the CRC-32 "
+            "compensation attack and insertion attacks against its integrity check). "
+            "Disable it; this is not a quantum issue.",
+            0, ["cnsa2_noncompliant"], adv,
+        )
+
     # --- Shor-broken public-key cryptography -------------------------------
     if algo.upper() in SHOR_BROKEN_FAMILIES or algo in {"RSA", "DSA", "DH", "ECDH", "ECDSA", "EdDSA"}:
         reg.append("nist8547_disallowed_2035")
@@ -192,10 +286,25 @@ def classify(algorithm: str, key_size: int | None = None,
             reg.append("cnsa2_noncompliant")
         if algo == "ML-DSA" and param and "87" not in param:
             reg.append("cnsa2_noncompliant")
+        level = pqc_security_category(algo, parameters.get("parameter_set"))
+        if algo in PQC_NON_STANDARDISED:
+            # Quantum-resistant but outside FIPS. Adequate against the threat
+            # this tool exists to measure, and still a compliance gap.
+            reg.append("cnsa2_noncompliant")
+            adv.append("not_nist_standardised")
+            return Classification(
+                algo, primitive, QuantumStatus.ADEQUATE,
+                f"{algo} is quantum-resistant and removes the harvest-now-decrypt-later "
+                f"exposure, but it is not a NIST selection and carries no FIPS validation. "
+                f"Treat as a sound interim measure, not as evidence of compliance: "
+                f"CNSA 2.0 and FIPS 203 both require ML-KEM.",
+                level, reg, adv,
+            )
         return Classification(
             algo, primitive, QuantumStatus.ADEQUATE,
-            f"{algo} is a post-quantum standard; no known quantum or classical break.",
-            5, reg, adv,
+            f"{algo} is a post-quantum standard; no known quantum or classical break."
+            + (f" {param} is NIST security category {level}." if level else ""),
+            level, reg, adv,
         )
 
     # --- Classically broken ------------------------------------------------
@@ -223,11 +332,29 @@ def classify(algorithm: str, key_size: int | None = None,
             "treat as broken for any signature or certificate use. Not a quantum issue.",
             0, ["cnsa2_noncompliant"], adv,
         )
-    if algo in {"Blowfish", "SHA-224"}:
+    if algo in {"Blowfish", "CAST5", "IDEA"}:
+        return Classification(
+            algo, primitive, QuantumStatus.DEPRECATED_INSUFFICIENT,
+            f"{algo} has a 64-bit block, which carries the same birthday-bound exposure "
+            f"as 3DES (Sweet32) once enough data is encrypted under one key. Retire on "
+            f"classical grounds; this is not a quantum issue.",
+            1, ["cnsa2_noncompliant"], adv,
+        )
+    if algo == "SHA-224":
         return Classification(
             algo, primitive, QuantumStatus.DEPRECATED_INSUFFICIENT,
             f"{algo} is below current strength recommendations.",
             1, ["cnsa2_noncompliant"], adv,
+        )
+    if algo in {"Camellia", "SEED"}:
+        # Cryptographically sound 128-bit block ciphers, and outside every
+        # compliance regime this tool checks. Sound is not the same as approved.
+        return Classification(
+            algo, primitive, QuantumStatus.ADEQUATE,
+            f"{algo} is a 128-bit block cipher with no known practical break, and Grover "
+            f"leaves an adequate margin. It sits outside FIPS and CNSA 2.0, so it is a "
+            f"compliance question rather than a quantum one.",
+            _aes_level(key_size), ["cnsa2_noncompliant"], adv,
         )
 
     # --- Symmetric and hash: adequate (see module docstring) ---------------
@@ -262,7 +389,7 @@ def classify(algorithm: str, key_size: int | None = None,
             + (" CNSA 2.0 requires SHA-384+ as policy." if level < 4 else ""),
             level, reg, adv,
         )
-    if algo in {"PBKDF2", "bcrypt", "scrypt", "Argon2", "HMAC"}:
+    if algo in {"PBKDF2", "bcrypt", "scrypt", "Argon2", "HMAC", "UMAC", "Poly1305"}:
         return Classification(
             algo, primitive, QuantumStatus.ADEQUATE,
             f"{algo} is a symmetric construction; no quantum-specific concern.",

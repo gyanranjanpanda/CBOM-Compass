@@ -42,6 +42,47 @@ def test_every_remaining_miss_is_a_documented_dynamic_case():
         assert "hard_dynamic" in key.path, f"unexpected miss: {key.path} {key.render()}"
 
 
+# Which corpus directory holds the ground truth for each rule family. Adding a
+# language to the scanner without adding one here makes the test below fail,
+# which is the point: an unmeasured language is an unsupported language.
+CORPUS_FOR_SUFFIX = {
+    ".py": "python", ".java": "java", ".js": "js", ".go": "go",
+    ".c": "c", ".cs": "csharp", ".rs": "rust",
+}
+
+
 def test_corpus_covers_every_supported_language():
+    """A language the scanner claims to support must have measured accuracy.
+
+    Derived from the scanner's own rule table rather than hard-coded, so adding
+    a language without labelling a corpus for it fails here instead of shipping
+    an unmeasured claim.
+    """
+    from cbom_compass.scanners.source import PATTERN_RULES
+
+    # Several suffixes share one rule list (.ts reuses .js, .hpp reuses .c).
+    # Collapse them so each distinct family is required once.
+    families = {id(rules) for rules in PATTERN_RULES.values()}
+    representative = {}
+    for suffix, rules in PATTERN_RULES.items():
+        representative.setdefault(id(rules), suffix)
+    assert len(families) == len(representative)
+
+    required = {CORPUS_FOR_SUFFIX[suffix] for suffix in representative.values()
+                if suffix in CORPUS_FOR_SUFFIX}
+    required.add("python")                  # AST-based, not in PATTERN_RULES
+
     ev = evaluate()
-    assert set(ev.per_language) == {"python", "java", "js", "go"}
+    missing = required - set(ev.per_language)
+    assert not missing, f"no labelled corpus for: {sorted(missing)}"
+
+
+def test_every_supported_suffix_maps_to_a_corpus():
+    """The mapping above must not fall behind the scanner's suffix list."""
+    from cbom_compass.scanners.source import PATTERN_RULES
+
+    representative = {}
+    for suffix, rules in PATTERN_RULES.items():
+        representative.setdefault(id(rules), suffix)
+    unmapped = set(representative.values()) - set(CORPUS_FOR_SUFFIX)
+    assert not unmapped, f"rule family with no corpus mapping: {sorted(unmapped)}"

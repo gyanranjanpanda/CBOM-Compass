@@ -79,11 +79,16 @@ $PY -m cbom_compass.cli --db "$DB" --user demo scan "${SCAN_PATHS[@]}" \
 dim "  done"
 
 echo
-bold "Scan 2 of 2 — adding real system binaries and a live TLS endpoint"
+bold "Scan 2 of 2 — adding binaries, a live TLS endpoint and two key stores"
 TLS_ARGS=()
 [[ -n "$TLS_TARGET" ]] && TLS_ARGS=(--tls "$TLS_TARGET")
+# Both key stores are file exports: a demo must not need cloud credentials or a
+# physical token, and the export path exercises the same mapping code the live
+# aws:// / azure:// / gcp:// / pkcs11:// connectors use.
 $PY -m cbom_compass.cli --db "$DB" --user demo scan \
     "${SCAN_PATHS[@]}" "${SYSTEM_BINARIES[@]}" "${TLS_ARGS[@]}" \
+    --cloud file://samples/keystore-export.json \
+    --cloud file://samples/hsm-export.json \
     --policy "$POLICY" --limit 12 -o demo-cbom.json --format cbom
 
 # --- 5. the other deliverables -------------------------------------------

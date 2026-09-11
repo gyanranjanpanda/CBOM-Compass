@@ -16,6 +16,11 @@ from typing import Any
 
 class SourceType(str, Enum):
     SOURCE_CODE = "source_code"
+    # Protocol cryptography configured rather than called: sshd_config, IKE
+    # proposals, nginx cipher lists. Its own source type because "which
+    # technique found this" is what the Inventory Explorer filters on, and a
+    # cipher list is not a call site.
+    CONFIGURATION = "configuration"
     DEPENDENCY = "dependency"
     BINARY = "binary"
     CONTAINER = "container"
@@ -90,7 +95,8 @@ class Asset:
     parameters: dict[str, Any] = field(default_factory=dict)
     library: str | None = None
     library_version: str | None = None
-    location_class: str = "unknown"     # call-site | linked-library | negotiated | manifest | image-layer | key-store
+    location_class: str = "unknown"     # call-site | config | linked-library | negotiated |
+                                        # manifest | image-layer | key-store | hardware-module
     primitive: str | None = None        # signature | kem | hash | block-cipher | ...
     evidence: list[Evidence] = field(default_factory=list)
     # Certificate subtype fields (PRD section 9) — populated only for asset_type == CERTIFICATE
@@ -266,6 +272,11 @@ class ScanRun:
     initiated_by: str
     asset_count: int = 0
     errors: list[dict[str, str]] = field(default_factory=list)
+    # Human-readable origin ("github.com/psf/requests", "payments.zip"). The
+    # workspace path in target_scope is real and is what `verify` re-reads, but
+    # it is not what anyone wants to see on a report. Defaulted so scans stored
+    # before this field existed still load.
+    label: str = ""
 
 
 def to_dict(obj: Any) -> Any:

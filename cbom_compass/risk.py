@@ -65,6 +65,24 @@ VULNERABILITY = {
 # subject to still carries an obligation — a much smaller one than a break.
 POLICY_ONLY_VULNERABILITY = 0.3
 
+# The classical half of a hybrid construction. Scoring X25519 at a full 1.0
+# inside `mlkem768x25519-sha256` was the same false-urgency bug this engine was
+# built to avoid, one level down: a quantum break of X25519 alone does not break
+# a hybrid exchange, because the ML-KEM half still protects it. Recommendations
+# tells people to deploy exactly this construction, so flagging it as act-now
+# contradicted the tool's own advice and penalised the codebases that had
+# already migrated correctly. Non-zero because a hybrid is a transitional state
+# — CNSA 2.0 ends at pure PQC — but far below anything genuinely exposed.
+HYBRID_CLASSICAL_VULNERABILITY = 0.1
+
+# Which classical primitive a PQC primitive can stand in for. A hybrid pairs
+# like with like: a KEM covers a key agreement, a PQC signature covers a
+# classical one. RSA appears under both because it is used for each.
+HYBRID_PARTNERS = {
+    "kem": {"key-agree"},
+    "signature": {"signature", "pke"},
+}
+
 # Weak cryptography is worth replacing even when no clock is pressing, so the
 # timing term never falls below this. Without a floor, a broken algorithm
 # protecting short-lived data would score zero.
@@ -85,7 +103,8 @@ def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
 
 
 def classify_asset(asset: Asset, policy: Policy,
-                   current_year: int | None = None) -> RiskClassification:
+                   current_year: int | None = None,
+                   hybrid_partner: str | None = None) -> RiskClassification:
     current_year = current_year or date.today().year
     cls = kb.classify(asset.algorithm, asset.key_size, asset.parameters)
 
@@ -164,6 +183,23 @@ def classify_asset(asset: Asset, policy: Policy,
         )
         cls.advisories = list(cls.advisories) + ["declared_non_security"]
 
+    if hybrid_partner and vulnerability > HYBRID_CLASSICAL_VULNERABILITY:
+        # Harvest-now-decrypt-later is the whole reason a bare X25519 exchange
+        # is urgent: traffic recorded today is readable once Shor is practical.
+        # A hybrid removes exactly that property, so the flag has to come off
+        # or the score keeps the urgency the discount was meant to remove.
+        vulnerability = HYBRID_CLASSICAL_VULNERABILITY
+        hndl_flag = False
+        cls.advisories = list(cls.advisories) + ["hybrid_classical_half"]
+        cls.rationale = (
+            f"{cls.algorithm} here is the classical half of a hybrid construction with "
+            f"{hybrid_partner}, found in the same module. Breaking {cls.algorithm} alone "
+            f"does not break the exchange — the post-quantum half still protects it, and "
+            f"recorded traffic stays protected. This is the recommended migration target, "
+            f"not a finding to act on. Scored low rather than zero because a hybrid is a "
+            f"transitional state: CNSA 2.0 ends at pure post-quantum."
+        )
+
     if is_library_row:
         # An inventory-only row must score zero on every axis. Leaving it with a
         # Mosca urgency would double-count the library alongside each algorithm
@@ -206,9 +242,71 @@ def classify_asset(asset: Asset, policy: Policy,
     )
 
 
+def _module_of(asset: Asset) -> str:
+    """The file a finding sits in, without the line number."""
+    return asset.primary_location.rsplit(":", 1)[0] if asset.primary_location else ""
+
+
+def find_hybrid_partners(assets: list[Asset]) -> dict[str, str]:
+    """Map asset id -> the PQC algorithm it is paired with, for hybrids.
+
+    There are two signals, and the precedence between them matters.
+
+    **Declared.** Some identifiers state the pairing themselves:
+    `mlkem768x25519-sha256` is a hybrid by name, and the SSH and configuration
+    scanners record that as `hybrid_with`. Where a scanner knows, it is not a
+    guess and nothing needs inferring.
+
+    **Co-located.** Application source says nothing, so the fallback is that a
+    hybrid is built by running both halves together — `kex_mlkem.py` holds the
+    ML-KEM and X25519 sides of one exchange. Pairing like with like (a KEM
+    covers a key agreement, not a hash) keeps it from firing on a module that
+    merely mentions both.
+
+    Co-location is suppressed inside any module that already carries a declared
+    pairing, and that suppression is the whole point of the two-tier scheme. An
+    `sshd_config` lists hybrid and non-hybrid key exchanges on the same line, so
+    inferring from co-location there would discount a bare `curve25519-sha256`
+    sitting next to `mlkem768x25519-sha256` — marking a genuinely exposed key
+    exchange as already migrated, which is the most expensive mistake this tool
+    could make.
+    """
+    partners: dict[str, str] = {}
+    declared_modules: set[str] = set()
+    for asset in assets:
+        declared = asset.parameters.get("hybrid_with")
+        if declared:
+            partners[asset.id] = declared
+            declared_modules.add(_module_of(asset))
+
+    pqc_by_module: dict[str, dict[str, str]] = {}
+    for asset in assets:
+        if asset.algorithm not in kb.PQC:
+            continue
+        role = kb.PRIMITIVE.get(asset.algorithm)
+        if role:
+            pqc_by_module.setdefault(_module_of(asset), {})[role] = asset.algorithm
+
+    for asset in assets:
+        if asset.algorithm in kb.PQC or asset.id in partners:
+            continue
+        module = _module_of(asset)
+        if module in declared_modules:
+            continue                 # a scanner already spoke for this module
+        classical_role = kb.PRIMITIVE.get(asset.algorithm)
+        available = pqc_by_module.get(module, {})
+        for pqc_role, pqc_algorithm in available.items():
+            if classical_role in HYBRID_PARTNERS.get(pqc_role, set()):
+                partners[asset.id] = pqc_algorithm
+                break
+    return partners
+
+
 def classify_all(assets: list[Asset], policy: Policy,
                  current_year: int | None = None) -> dict[str, RiskClassification]:
-    return {a.id: classify_asset(a, policy, current_year) for a in assets}
+    partners = find_hybrid_partners(assets)
+    return {a.id: classify_asset(a, policy, current_year, partners.get(a.id))
+            for a in assets}
 
 
 def heat_map(risks: dict[str, RiskClassification]) -> dict[str, dict[str, int]]:
