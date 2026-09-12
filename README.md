@@ -310,6 +310,40 @@ Running it against real code is how the comment-matching bug was found: a findin
 `//private static final String RSA_ENC_OID = ...` in jjwt — a commented-out declaration. Dead code
 is not cryptography in use, and filtering comments removed 14 false positives.
 
+## What the software everyone installs is actually using
+
+Our accuracy corpus is 94 usages we wrote ourselves, and a corpus written by the people who wrote
+the scanner can only prove internal consistency. So we pointed the tool at real code:
+
+```bash
+cbom-compass survey tools/survey/targets.txt --report docs/ecosystem-survey.md
+```
+
+**32 widely depended-on open-source projects**, unmodified, at their default branch, across all
+seven supported languages — 3,464 cryptographic assets in 127 seconds, no project failed to scan.
+
+| | |
+|---|---|
+| **Contain cryptography a quantum computer breaks** | **81%** (26/32) |
+| Contain harvest-now-decrypt-later exposure | 88% |
+| **Contain any post-quantum algorithm** | **19%** (6/32) |
+| Reach of RSA / ECDSA | 62% / 50% of projects |
+
+Four fifths of the sample has a migration to do. One fifth has started. Full result and the
+per-project table: [`docs/ecosystem-survey.md`](docs/ecosystem-survey.md).
+
+It is a sample, not a census, and it is not a judgement on any project in it — RSA and ECDSA are
+correct engineering decisions today. The finding is the *size* of a transition that has barely
+begun, in code that sits under most software in production.
+
+Running it also did what scanning real code is supposed to do, and found two bugs in us. `okhttp`
+returned **zero** findings from 844 files, because it is 573 Kotlin files to 71 Java and we scanned
+only `.java` — a silent zero on a TLS client being the worst kind of wrong answer. And the
+identifier `tlsVersion` was classifying as a TLS *protocol version*, because the check matched the
+prefix without requiring the rest to be a version. Both are fixed and both have tests.
+
+---
+
 ## Gating a pull request
 
 An inventory becomes useful when it turns into a control. `gate` compares a

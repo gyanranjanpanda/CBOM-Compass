@@ -236,6 +236,15 @@ PATTERN_RULES[".ts"] = PATTERN_RULES[".js"]
 PATTERN_RULES[".mjs"] = PATTERN_RULES[".js"]
 PATTERN_RULES[".jsx"] = PATTERN_RULES[".js"]
 
+# Kotlin reaches the same JCA that Java does — `KeyPairGenerator.getInstance`,
+# `MessageDigest.getInstance`, `Signature.getInstance` are spelled identically,
+# and it shares Java's comment syntax. Added after the ecosystem survey returned
+# zero findings for okhttp, which is 573 Kotlin files to 71 Java and certainly
+# does use cryptography: a silent zero on a TLS client is the worst kind of
+# wrong answer, because nothing about it looks like a failure.
+PATTERN_RULES[".kt"] = PATTERN_RULES[".java"]
+PATTERN_RULES[".kts"] = PATTERN_RULES[".java"]
+
 MODE_TOKENS = {"ECB", "CBC", "GCM", "CTR", "CFB", "OFB", "CCM", "XTS", "POLY1305", "SIV"}
 
 # Identifiers that pack algorithm, size, mode or curve into one CamelCase or

@@ -568,6 +568,37 @@ def cmd_demo(args: argparse.Namespace) -> int:
     return cmd_serve(args)
 
 
+def cmd_survey(args: argparse.Namespace) -> int:
+    """Scan many projects and roll the results up."""
+    from . import survey as survey_mod
+
+    targets = (survey_mod.read_targets(args.targets)
+               if Path(args.targets).is_file() else [args.targets])
+    if args.limit:
+        targets = targets[: args.limit]
+    policy = Policy.load(args.policy)
+
+    result = survey_mod.Survey()
+    for index, target in enumerate(targets, start=1):
+        print(f"{DIM}[{index}/{len(targets)}] {target}{RST}", flush=True)
+        project = survey_mod.scan_one(target, policy, timeout=args.timeout)
+        result.projects.append(project)
+        if project.ok:
+            print(f"  {GRN}ok{RST} {project.assets} assets, {project.broken} broken "
+                  f"{DIM}({project.seconds:.1f}s){RST}", flush=True)
+        else:
+            print(f"  {YEL}skipped{RST} {project.error}", flush=True)
+
+    print(survey_mod.format_report(result))
+    if args.out:
+        Path(args.out).write_text(json.dumps(result.to_dict(), indent=2))
+        print(f"JSON -> {args.out}")
+    if args.report:
+        Path(args.report).write_text(survey_mod.markdown(result))
+        print(f"report -> {args.report}")
+    return 0 if result.scanned else 1
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
     from .api import create_app
@@ -651,6 +682,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--min-recall", type=float, default=None,
                    help="exit non-zero if algorithm-level recall falls below this")
     p.set_defaults(func=cmd_eval)
+
+    p = sub.add_parser(
+        "survey", help="scan many projects and aggregate the result")
+    p.add_argument("targets", help="file listing one project per line, or a single "
+                                   "repository URL / path")
+    p.add_argument("--policy", default=None)
+    p.add_argument("--limit", type=int, default=None, help="scan only the first N")
+    p.add_argument("--timeout", type=int, default=180, help="clone timeout, seconds")
+    p.add_argument("--out", default=None, help="write the full result as JSON")
+    p.add_argument("--report", default=None, help="write a markdown report")
+    p.set_defaults(func=cmd_survey)
 
     p = sub.add_parser("serve", help="run the dashboard")
     p.add_argument("--host", default="127.0.0.1")

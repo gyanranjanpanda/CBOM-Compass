@@ -409,3 +409,31 @@ def test_a_virtualenv_is_still_scannable_when_it_is_the_target(tmp_path):
     (venv / "vendored.so").write_bytes(
         b"\x7fELF" + b"\x00" * 64 + b"OpenSSL 3.0.11" + b"\x00" * 16)
     assert BinaryScanner().scan(str(venv)).assets
+
+
+def test_kotlin_reaches_the_same_jca_as_java(tmp_path):
+    """Found by the ecosystem survey: okhttp returned zero findings from 844
+    files because it is 573 Kotlin files to 71 Java. A silent zero on a TLS
+    client is the worst kind of wrong answer — nothing about it looks like a
+    failure."""
+    assets = _scan_text(tmp_path, "Held.kt",
+                        'val kp = KeyPairGenerator.getInstance("RSA").run {\n'
+                        '  initialize(2048, SecureRandom())\n}\n'
+                        'val md = MessageDigest.getInstance("SHA-1")\n')
+    found = {a.algorithm for a in assets}
+    assert {"RSA", "SHA-1"} <= found, found
+
+
+def test_an_identifier_that_merely_starts_with_tls_is_not_a_protocol(tmp_path):
+    """`tlsVersion` classified as a TLS protocol version and was reported as an
+    adequate cryptographic asset, because the check matched the prefix without
+    requiring the remainder to be a version."""
+    from cbom_compass.knowledge.algorithms import classify
+    from cbom_compass.models import QuantumStatus
+
+    for identifier in ("tlsVersion", "tlsVersions", "TLSVersion", "sslVersion"):
+        assert classify(identifier).quantum_status is QuantumStatus.UNKNOWN, identifier
+    # real versions still resolve
+    assert classify("TLSv1.3").quantum_status is QuantumStatus.ADEQUATE
+    assert classify("SSLv3").quantum_status is QuantumStatus.DEPRECATED_INSUFFICIENT
+    assert classify("DTLSv1.2").quantum_status is QuantumStatus.ADEQUATE

@@ -207,10 +207,15 @@ def classify(algorithm: str, key_size: int | None = None,
         adv.append("rsa_pkcs1v15_padding")
 
     # --- Protocol versions -------------------------------------------------
-    proto = algo.upper().replace("V", "V").replace(" ", "")
-    if proto.startswith(("TLSV", "SSLV", "DTLSV")):
-        version = proto.replace("TLSV", "").replace("SSLV", "").replace("DTLSV", "")
-        if proto.startswith("SSLV") or version in {"1.0", "1.1", "1"}:
+    # The remainder after the prefix has to *be* a version. Matching the prefix
+    # alone meant the identifier `tlsVersion` classified as a TLS protocol and
+    # was reported as an adequate cryptographic asset — found by running the
+    # ecosystem survey over okhttp, where it appears constantly.
+    proto = algo.upper().replace(" ", "")
+    prefix = next((p for p in ("DTLSV", "TLSV", "SSLV") if proto.startswith(p)), None)
+    if prefix and re.fullmatch(r"\d+(?:\.\d+)?", proto[len(prefix):]):
+        version = proto[len(prefix):]
+        if prefix == "SSLV" or version in {"1.0", "1.1", "1"}:
             return Classification(
                 algo, "protocol", QuantumStatus.DEPRECATED_INSUFFICIENT,
                 f"{algorithm} is deprecated on classical grounds (RFC 8996 for TLS 1.0/1.1; "

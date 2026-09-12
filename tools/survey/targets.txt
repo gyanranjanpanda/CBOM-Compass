@@ -1,0 +1,56 @@
+# Projects for the ecosystem survey.
+#
+# Chosen for reach rather than at random: these are libraries and applications
+# that sit in the dependency tree of a very large amount of production software,
+# spread across all seven languages the scanner supports. That bias is stated in
+# the write-up — well-maintained popular code is, if anything, the optimistic
+# end of the distribution.
+#
+# Reproduce with:
+#   cbom-compass survey tools/survey/targets.txt --report docs/ecosystem-survey.md
+
+# --- Python ---------------------------------------------------------------
+github.com/psf/requests
+github.com/urllib3/urllib3
+github.com/paramiko/paramiko
+github.com/pyca/cryptography
+github.com/pallets/flask
+github.com/jpadilla/pyjwt
+github.com/encode/httpx
+github.com/pyca/pyopenssl
+
+# --- JavaScript / TypeScript ---------------------------------------------
+github.com/axios/axios
+github.com/expressjs/express
+github.com/auth0/node-jsonwebtoken
+github.com/digitalbazaar/forge
+github.com/dcodeIO/bcrypt.js
+github.com/nodejs/undici
+
+# --- Go -------------------------------------------------------------------
+github.com/golang/crypto
+github.com/go-jose/go-jose
+github.com/spf13/viper
+github.com/gorilla/websocket
+
+# --- Java -----------------------------------------------------------------
+github.com/jwtk/jjwt
+github.com/square/okhttp
+github.com/google/tink
+
+# --- C / C++ --------------------------------------------------------------
+github.com/curl/curl
+github.com/Mbed-TLS/mbedtls
+github.com/jedisct1/libsodium
+github.com/libgit2/libgit2
+
+# --- C# / .NET ------------------------------------------------------------
+github.com/jstedfast/MimeKit
+github.com/jwt-dotnet/jwt
+github.com/StackExchange/StackExchange.Redis
+
+# --- Rust -----------------------------------------------------------------
+github.com/rustls/rustls
+github.com/briansmith/ring
+github.com/RustCrypto/hashes
+github.com/sfackler/rust-openssl

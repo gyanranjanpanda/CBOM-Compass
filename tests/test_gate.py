@@ -214,3 +214,56 @@ def test_baseline_ref_compares_the_same_subtree(tmp_path):
                      "--baseline-ref", "HEAD"]) == 1
     finally:
         os.chdir(cwd)
+
+
+# ---------------------------------------------------------------------------
+# Surveying many projects
+# ---------------------------------------------------------------------------
+def test_survey_isolates_a_failing_project(tmp_path):
+    """A survey that aborts on the first unreachable repository is not a
+    survey. Failures are named in the output rather than silently reducing the
+    denominator."""
+    from cbom_compass.policy import Policy
+    from cbom_compass.survey import Survey, scan_one
+
+    good = tree(tmp_path, "good", {"app.py": BROKEN})
+    result = Survey()
+    result.projects.append(scan_one(str(good), Policy()))
+    result.projects.append(scan_one("github.com/this-org/does-not-exist-xyz",
+                                    Policy(), timeout=20))
+
+    assert len(result.scanned) == 1
+    assert len(result.failed) == 1
+    assert result.failed[0].error
+    rollup = result.rollup()
+    assert rollup["projects"] == 1 and rollup["failed"] == 1
+
+
+def test_survey_rollup_counts_projects_not_call_sites(tmp_path):
+    """A project with two hundred RSA call sites and one with a single call are
+    both one organisation with an RSA migration to plan."""
+    from cbom_compass.policy import Policy
+    from cbom_compass.survey import Survey, scan_one
+
+    many = tree(tmp_path, "many", {"a.py": BROKEN * 5})
+    one = tree(tmp_path, "one", {"a.py": BROKEN})
+    result = Survey()
+    for root in (many, one):
+        result.projects.append(scan_one(str(root), Policy()))
+
+    reach = dict(result.rollup()["algorithm_reach"])
+    assert reach["MD5"] == 2, reach
+    assert result.rollup()["share_with_broken"] == 1.0
+
+
+def test_survey_report_states_what_it_is_not(tmp_path):
+    """The write-up must not read as a judgement on the projects in it."""
+    from cbom_compass.policy import Policy
+    from cbom_compass.survey import Survey, markdown, scan_one
+
+    result = Survey()
+    result.projects.append(scan_one(str(tree(tmp_path, "p", {"a.py": BROKEN})),
+                                    Policy()))
+    text = markdown(result)
+    assert "not a judgement" in text
+    assert "sample, not a census" in text
