@@ -1,0 +1,108 @@
+name: 'CBOM Compass crypto gate'
+description: >-
+  Fail a pull request that introduces new quantum-broken cryptography. Scans the
+  base revision and the change, and blocks only when the change makes things
+  worse.
+author: 'Team Nexus'
+branding:
+  icon: 'lock'
+  color: 'green'
+
+inputs:
+  path:
+    description: 'Tree to check.'
+    required: false
+    default: '.'
+  policy:
+    description: 'crypto-policy.yaml, for data lifetime and business criticality.'
+    required: false
+    default: ''
+  include-deprecated:
+    description: >-
+      Also block on deprecated / insufficient algorithms (SHA-1, 3DES). Off by
+      default: a team mid-migration legitimately carries some, and blocking on
+      those punishes exactly the teams doing the work.
+    required: false
+    default: 'false'
+  allow:
+    description: 'Tolerate up to N newly introduced broken assets.'
+    required: false
+    default: '0'
+  base-ref:
+    description: >-
+      Revision to compare against. Defaults to the pull request base, then to
+      the previous commit.
+    required: false
+    default: ''
+  python-version:
+    description: 'Python used to run the scanner.'
+    required: false
+    default: '3.12'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install CBOM Compass
+      shell: bash
+      run: python -m pip install --quiet "${{ github.action_path }}"
+
+    - name: Resolve the base revision
+      id: base
+      shell: bash
+      run: |
+        ref='${{ inputs.base-ref }}'
+        if [ -z "$ref" ]; then ref='${{ github.event.pull_request.base.sha }}'; fi
+        if [ -z "$ref" ]; then ref="$(git rev-parse HEAD^ 2>/dev/null || true)"; fi
+        echo "ref=$ref" >> "$GITHUB_OUTPUT"
+        if [ -z "$ref" ]; then
+          echo "No base revision to compare against — the gate will report only."
+        else
+          echo "Comparing against $ref"
+        fi
+
+    - name: Scan the base revision
+      shell: bash
+      run: |
+        set -eo pipefail
+        ref='${{ steps.base.outputs.ref }}'
+        [ -z "$ref" ] && exit 0
+        # A shallow clone will not contain the base commit. Fetching it is
+        # cheaper than asking every caller to set fetch-depth: 0.
+        git cat-file -e "$ref^{commit}" 2>/dev/null || \
+          git fetch --no-tags --depth=1 origin "$ref" || true
+        if ! git cat-file -e "$ref^{commit}" 2>/dev/null; then
+          echo "::warning::base revision $ref is not available; reporting only"
+          exit 0
+        fi
+        rm -rf "$RUNNER_TEMP/cbom-base"
+        git worktree add --detach "$RUNNER_TEMP/cbom-base" "$ref" >/dev/null
+        args=()
+        if [ -n '${{ inputs.policy }}' ]; then args+=(--policy '${{ inputs.policy }}'); fi
+        cbom-compass --db "$RUNNER_TEMP/cbom-gate.db" scan \
+          "$RUNNER_TEMP/cbom-base" "${args[@]}" \
+          -o "$RUNNER_TEMP/cbom-baseline.json" --format json >/dev/null
+
+    - name: Crypto gate
+      shell: bash
+      run: |
+        set -eo pipefail
+        args=()
+        if [ -n '${{ inputs.policy }}' ]; then args+=(--policy '${{ inputs.policy }}'); fi
+        if [ '${{ inputs.include-deprecated }}' = 'true' ]; then args+=(--include-deprecated); fi
+        if [ -f "$RUNNER_TEMP/cbom-baseline.json" ]; then
+          args+=(--baseline "$RUNNER_TEMP/cbom-baseline.json")
+        fi
+        cbom-compass --db "$RUNNER_TEMP/cbom-gate.db" gate '${{ inputs.path }}' \
+          --allow '${{ inputs.allow }}' \
+          --summary-file "$GITHUB_STEP_SUMMARY" "${args[@]}"
+
+    - name: Clean up the base worktree
+      if: always()
+      shell: bash
+      run: |
+        git worktree remove --force "$RUNNER_TEMP/cbom-base" 2>/dev/null || true

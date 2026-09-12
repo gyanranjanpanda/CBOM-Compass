@@ -310,6 +310,55 @@ Running it against real code is how the comment-matching bug was found: a findin
 `//private static final String RSA_ENC_OID = ...` in jjwt — a commented-out declaration. Dead code
 is not cryptography in use, and filtering comments removed 14 false positives.
 
+## Gating a pull request
+
+An inventory becomes useful when it turns into a control. `gate` compares a
+change against a baseline and fails the build when the change introduces new
+quantum-broken cryptography.
+
+```bash
+# locally, against the last commit
+cbom-compass gate . --baseline-ref HEAD
+
+# in CI, against an explicit baseline
+cbom-compass scan "$BASE" -o baseline.json --format json
+cbom-compass gate . --baseline baseline.json --summary-file "$GITHUB_STEP_SUMMARY"
+```
+
+Any repository can adopt it in one step:
+
+```yaml
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0 }        # the gate needs the base revision
+- uses: gyanranjanpanda/CBOM-Compass@main
+  with:
+    path: .
+    policy: crypto-policy.yaml
+    include-deprecated: 'true'
+```
+
+It runs on this repository's own pull requests
+([`.github/workflows/crypto-gate.yml`](.github/workflows/crypto-gate.yml)), and
+there is a [pre-commit](https://pre-commit.com) hook for the same check locally.
+
+**The design is mostly about what must *not* fail the build**, because a gate
+teams switch off is worth nothing:
+
+| Situation | Result | Why |
+|---|---|---|
+| New broken algorithm added | **fails** | the thing it exists to catch |
+| Pre-existing debt | passes | the rule is "do not make it worse", not "be clean" — otherwise the old estates that most need this cannot adopt it |
+| A file renamed or moved | passes | asset identity includes file and line, so a rename reads as a new finding; the gate compares *counts by status* instead |
+| Build output, vendored code | passes | the working tree is filtered through `git ls-files`, so it sees the same population as the baseline |
+| Uncommitted new file | **fails** | ignored is not the same as untracked |
+| Deprecated algorithm added | passes unless `--include-deprecated` | a team mid-migration legitimately carries some |
+| No baseline available | passes, reports only | otherwise the check could never be introduced |
+| Baseline unreadable | **exit 2** | silently passing would make it a no-op nobody notices |
+
+`--allow N` sets a tolerance where a team needs one.
+
+---
+
 ## Measured accuracy
 
 ```bash

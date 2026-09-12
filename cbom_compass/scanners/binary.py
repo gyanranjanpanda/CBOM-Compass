@@ -52,6 +52,15 @@ CONSTANTS = {
     "SHA-256": bytes.fromhex("67e6096a85ae67bb72f36e3c3af54fa5"),     # H0..H1 LE
     "MD5": bytes.fromhex("0123456789abcdeffedcba9876543210"),
 }
+# Skipped *relative to the scan root*, matching the other path scanners. Every
+# one of them skipped these; this scanner excluded only `.git`, and did it on
+# the absolute path — so `cbom-compass scan .` walked the whole virtualenv and
+# every pack file in `.git`, turning a one-second scan into minutes. Checking
+# relative to the root means `scan .venv/lib/...` still works when a virtualenv
+# is deliberately the target.
+SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__",
+             "dist", "build", ".tox", ".cbom-workspace"}
+
 MAX_BYTES = 128 * 1024 * 1024
 VERSION_IN_SONAME = re.compile(r"(\d+(?:\.\d+){1,3}[a-z]?)")
 
@@ -72,7 +81,9 @@ class BinaryScanner(Scanner):
             result.errors.append(ScanError("binary", target, "path does not exist"))
             return result
         candidates = [root] if root.is_file() else [
-            p for p in root.rglob("*") if p.is_file() and ".git" not in p.parts
+            p for p in root.rglob("*")
+            if p.is_file()
+            and not any(d in p.relative_to(root).parts for d in SKIP_DIRS)
         ]
         for path in candidates:
             try:

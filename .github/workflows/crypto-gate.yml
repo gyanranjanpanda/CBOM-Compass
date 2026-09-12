@@ -1,0 +1,30 @@
+# CBOM Compass gating its own pull requests with its own action.
+#
+# The tool's argument is that an inventory becomes useful when it turns into a
+# control. Running that control on this repository is the cheapest possible
+# demonstration that it works — and it means a change here that introduces
+# quantum-broken cryptography fails review, like anyone else's would.
+name: Crypto gate
+
+on:
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: No new quantum-broken cryptography
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # the gate needs the base revision
+
+      - name: Crypto gate
+        uses: ./
+        with:
+          path: cbom_compass
+          policy: crypto-policy.yaml
+          include-deprecated: 'true'

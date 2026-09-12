@@ -18,7 +18,8 @@ from .base import ScanError, ScanResult, Scanner
 # Directories skipped *relative to the scan root*. Matching against the
 # absolute path would skip everything when the root is itself inside one of
 # these (e.g. scanning a virtualenv's site-packages on purpose).
-SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__"}
+SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__",
+             ".cbom-workspace"}
 MANIFESTS = {"requirements.txt", "package.json", "pom.xml", "go.mod", "Pipfile", "pyproject.toml"}
 
 

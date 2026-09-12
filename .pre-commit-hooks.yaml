@@ -1,0 +1,16 @@
+# Run the same check locally that CI runs on the pull request.
+#
+# Compares the working tree against HEAD, so it answers "do my staged changes
+# make this worse?" — the same question the pull-request gate asks, one step
+# earlier, where it costs a minute instead of a review cycle.
+#
+# `--baseline-ref` reads the revision with `git archive`, so the hook never
+# touches the index or the working directory.
+- id: cbom-compass-gate
+  name: CBOM Compass crypto gate
+  description: Fail a commit that introduces new quantum-broken cryptography.
+  entry: cbom-compass
+  args: [gate, ., --baseline-ref, HEAD]
+  language: python
+  pass_filenames: false
+  stages: [pre-commit]

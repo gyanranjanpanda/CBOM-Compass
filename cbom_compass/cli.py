@@ -191,6 +191,265 @@ def cmd_diff(args: argparse.Namespace) -> int:
     return 0
 
 
+# What the gate blocks on. Shor-broken and classically-broken are the defaults
+# because they are the two that are not a matter of opinion; deprecated is
+# opt-in, since a team mid-migration will legitimately carry some.
+BLOCKING = ("broken", "broken_classical")
+DEPRECATED = "deprecated_insufficient"
+
+
+def _status_counts(document: dict, statuses: list[str]) -> dict[str, int]:
+    counts = dict.fromkeys(statuses, 0)
+    for row in document.get("assets", []):
+        status = row.get("quantum_status")
+        if status in counts:
+            counts[status] += 1
+    return counts
+
+
+def _gate_markdown(passed: bool, statuses: list[str], before: dict, after: dict,
+                   introduced: list[dict], allowance: int) -> str:
+    verdict = "✅ **passed**" if passed else "❌ **failed**"
+    lines = [f"## CBOM Compass crypto gate — {verdict}", ""]
+    total_before, total_after = sum(before.values()), sum(after.values())
+    lines += [
+        f"Blocking statuses: `{'`, `'.join(statuses)}`"
+        + (f" · allowance {allowance}" if allowance else ""), "",
+        "| | base | this change | delta |",
+        "|---|---:|---:|---:|",
+    ]
+    for status in statuses:
+        delta = after[status] - before[status]
+        lines.append(f"| {status.replace('_', ' ')} | {before[status]} | "
+                     f"{after[status]} | {delta:+d} |")
+    lines.append(f"| **total** | **{total_before}** | **{total_after}** | "
+                 f"**{total_after - total_before:+d}** |")
+
+    if introduced:
+        lines += ["", "### New findings at these locations", "",
+                  "| score | asset | status | location |", "|---:|---|---|---|"]
+        for row in introduced[:20]:
+            lines.append(f"| {row['score']:.2f} | `{row['name']}` | "
+                         f"{row['quantum_status'].replace('_', ' ')} | "
+                         f"`{row['location']}` |")
+        if len(introduced) > 20:
+            lines.append(f"| | _+{len(introduced) - 20} more_ | | |")
+    if not passed:
+        lines += ["", "This change increases the amount of cryptography a quantum "
+                      "computer breaks. Replace the algorithms above, or record a "
+                      "deliberate exception, before merging."]
+    return "\n".join(lines) + "\n"
+
+
+def _repo_relative(paths: list[str]) -> list[str] | None:
+    """Express the gated paths relative to the repository root.
+
+    The baseline has to cover the *same* subtree as the change, or the two
+    counts are not comparable and the gate silently passes everything. Gating
+    `cbom_compass` against a baseline of the whole repository is not a
+    comparison, it is a coin toss.
+    """
+    import subprocess
+
+    done = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                          capture_output=True, text=True)
+    if done.returncode != 0:
+        return None
+    root = Path(done.stdout.strip()).resolve()
+    relative: list[str] = []
+    for raw in paths:
+        try:
+            relative.append(str(Path(raw).resolve().relative_to(root)))
+        except ValueError:
+            return None          # outside the repository; cannot map it
+    return relative
+
+
+MAX_GATE_FILES = 20_000
+
+
+def _materialise_tracked(paths: list[str], dest: Path) -> bool:
+    """Copy the files git knows about into `dest`, preserving layout.
+
+    Used for the *current* side of a `--baseline-ref` comparison so both sides
+    see the same population. Without it the working tree is scanned as-is,
+    including everything `.gitignore` excludes — build output, vendored
+    dependencies, scan workspaces — while the baseline, coming from a git
+    revision, contains none of it. Every one of those files then reads as newly
+    introduced cryptography and the gate fails a commit that changed nothing.
+
+    `-c` is tracked files and `-o --exclude-standard` is untracked-but-not-
+    ignored, so genuinely new work still counts.
+    """
+    import shutil
+    import subprocess
+
+    done = subprocess.run(
+        ["git", "ls-files", "-co", "--exclude-standard", "-z", "--", *paths],
+        capture_output=True, text=True)
+    if done.returncode != 0:
+        return False
+    names = [n for n in done.stdout.split("\0") if n]
+    if len(names) > MAX_GATE_FILES:
+        print(f"{YEL}{len(names)} files — gating the working tree directly{RST}",
+              file=sys.stderr)
+        return False
+    for name in names:
+        source = Path(name)
+        if not source.is_file():
+            continue
+        target = dest / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(source, target)
+        except OSError:
+            continue
+    return True
+
+
+def _scan_git_ref(ref: str, paths: list[str], policy, user: str) -> dict | None:
+    """Scan a git revision without disturbing the working tree.
+
+    `git archive` rather than a worktree or a checkout, because this also runs
+    from a pre-commit hook where touching the index or the working directory
+    would be unforgivable. The tar is extracted with the `data` filter, which
+    refuses absolute paths, traversal and device nodes.
+    """
+    import subprocess
+    import tarfile
+    import tempfile
+
+    relative = _repo_relative(paths)
+    if relative is None:
+        print(f"{YEL}--baseline-ref needs paths inside the git repository{RST}",
+              file=sys.stderr)
+        return None
+
+    with tempfile.TemporaryDirectory(prefix="cbom-baseline-") as tmp:
+        archive = Path(tmp) / "ref.tar"
+        tree = Path(tmp) / "tree"
+        tree.mkdir()
+        done = subprocess.run(
+            ["git", "archive", "--format=tar", "-o", str(archive), ref],
+            capture_output=True, text=True)
+        if done.returncode != 0:
+            print(f"{YEL}could not read git revision {ref!r}: "
+                  f"{done.stderr.strip()}{RST}", file=sys.stderr)
+            return None
+        with tarfile.open(archive) as bundle:
+            bundle.extractall(tree, filter="data")
+
+        # A path that does not exist at the base revision is new, so everything
+        # under it is a new finding — which is exactly what should be reported.
+        present = [str(tree / rel) for rel in relative
+                   if rel == "." or (tree / rel).exists()]
+        if not present:
+            present = [str(tree)] if "." in relative else []
+        if not present:
+            return run_scan({}, policy, initiated_by=user,
+                            label=f"baseline {ref}").to_dict()
+        targets = {name: list(present) for name in PATH_SCANNERS}
+        return run_scan(targets, policy, initiated_by=user,
+                        label=f"baseline {ref}").to_dict()
+
+
+def cmd_gate(args: argparse.Namespace) -> int:
+    """Fail a change that introduces new quantum-broken cryptography.
+
+    Deliberately compares *counts by status*, not per-location asset ids.
+    Identity includes the file and line, so renaming a module or moving a
+    function would otherwise register as a fresh finding and fail a build that
+    changed no cryptography at all. A gate that cries wolf on refactors is a
+    gate somebody switches off within a week.
+
+    The rule is "do not make it worse", not "be clean". Blocking on pre-existing
+    debt makes the check unadoptable for exactly the large old estates that need
+    it most; this lets them hold the line while they migrate.
+    """
+    statuses = list(BLOCKING) + ([DEPRECATED] if args.include_deprecated else [])
+    policy = Policy.load(args.policy)
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="cbom-current-") as staging:
+        scan_paths = list(args.path)
+        if args.baseline_ref:
+            # Match the baseline's population; see `_materialise_tracked`.
+            tree = Path(staging) / "tree"
+            tree.mkdir()
+            if _materialise_tracked(scan_paths, tree):
+                relative = _repo_relative(scan_paths) or []
+                scan_paths = [str(tree / rel) for rel in relative
+                              if rel == "." or (tree / rel).exists()] or [str(tree)]
+        targets = {name: list(scan_paths) for name in PATH_SCANNERS}
+        current = run_scan(targets, policy, initiated_by=args.user,
+                           label="crypto gate").to_dict()
+    after = _status_counts(current, statuses)
+
+    baseline = None
+    baseline_path = Path(args.baseline) if args.baseline else None
+    if baseline_path is not None and baseline_path.exists():
+        try:
+            baseline = json.loads(baseline_path.read_text())
+        except json.JSONDecodeError as exc:
+            print(f"{RED}baseline is not valid JSON: {exc}{RST}", file=sys.stderr)
+            return 2
+    elif args.baseline_ref:
+        baseline = _scan_git_ref(args.baseline_ref, list(args.path),
+                                 policy, args.user)
+
+    if baseline is None:
+        print(f"{YEL}no baseline to compare against{RST} — reporting only.")
+        for status in statuses:
+            print(f"  {after[status]:>4} {status.replace('_', ' ')}")
+        print(f"{DIM}Write one with: cbom-compass scan <base> -o baseline.json "
+              f"--format json, or pass --baseline-ref HEAD{RST}")
+        if args.summary_file:
+            Path(args.summary_file).write_text(_gate_markdown(
+                True, statuses, dict.fromkeys(statuses, 0), after, [], args.allow))
+        return 0
+
+    before = _status_counts(baseline, statuses)
+
+    drift = diff_reports(baseline, current)
+    introduced = sorted(
+        (row for row in drift["added"] if row["quantum_status"] in statuses),
+        key=lambda r: -r["score"])
+
+    added = sum(after.values()) - sum(before.values())
+    passed = added <= args.allow
+
+    print(f"\n{BOLD}CBOM Compass crypto gate{RST}")
+    print(f"{DIM}blocking on: {', '.join(statuses)}"
+          + (f" · allowance {args.allow}" if args.allow else "") + f"{RST}\n")
+    print(f"  {'status':<24} {'base':>6} {'now':>6} {'delta':>7}")
+    for status in statuses:
+        delta = after[status] - before[status]
+        colour = RED if delta > 0 else (GRN if delta < 0 else DIM)
+        print(f"  {status.replace('_', ' '):<24} {before[status]:>6} "
+              f"{after[status]:>6} {colour}{delta:>+7}{RST}")
+
+    if introduced:
+        print(f"\n{BOLD}New findings{RST}")
+        for row in introduced[:15]:
+            print(f"  {RED}+{RST} {row['score']:>5.2f} {row['name'][:22]:<22} "
+                  f"{row['location'][:52]}")
+        if len(introduced) > 15:
+            print(f"  {DIM}+{len(introduced) - 15} more{RST}")
+
+    if args.summary_file:
+        Path(args.summary_file).write_text(
+            _gate_markdown(passed, statuses, before, after, introduced, args.allow))
+
+    if passed:
+        print(f"\n{GRN}gate passed{RST} — this change adds no quantum-broken "
+              f"cryptography.")
+        return 0
+    print(f"\n{RED}gate failed{RST} — this change adds {added} asset(s) that a "
+          f"quantum computer breaks.", file=sys.stderr)
+    return 1
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
     document = json.loads(Path(args.file).read_text())
     errors = cbom_mod.validate(document)
@@ -356,6 +615,24 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("old")
     p.add_argument("new")
     p.set_defaults(func=cmd_diff)
+
+    p = sub.add_parser(
+        "gate", help="fail a change that introduces new quantum-broken cryptography")
+    p.add_argument("path", nargs="+", help="the tree to check, usually .")
+    p.add_argument("--baseline", default=None,
+                   help="JSON report of the base revision "
+                        "(cbom-compass scan <base> -o baseline.json --format json)")
+    p.add_argument("--baseline-ref", default=None, metavar="REF",
+                   help="scan this git revision as the baseline instead, without "
+                        "touching the working tree (e.g. HEAD, origin/main)")
+    p.add_argument("--policy", default=None, help="crypto-policy.yaml")
+    p.add_argument("--include-deprecated", action="store_true",
+                   help="also block on deprecated / insufficient algorithms")
+    p.add_argument("--allow", type=int, default=0, metavar="N",
+                   help="tolerate up to N newly introduced assets (default 0)")
+    p.add_argument("--summary-file", default=None,
+                   help="write a markdown summary here, e.g. $GITHUB_STEP_SUMMARY")
+    p.set_defaults(func=cmd_gate)
 
     p = sub.add_parser("validate", help="check a CBOM file for CycloneDX conformance")
     p.add_argument("file")

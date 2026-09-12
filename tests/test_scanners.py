@@ -377,3 +377,35 @@ def test_a_library_algorithm_not_observed_directly_is_still_reported(tmp_path):
     assert len(inferred) == 1
     assert inferred[0].library == "openssl"
     assert inferred[0].detection_methods == ["binary-version-string"]
+
+
+def test_binary_scanner_skips_the_same_directories_as_the_others(tmp_path):
+    """`scan .` walked the whole virtualenv and every pack file in .git.
+
+    Every other path scanner skipped those; this one excluded only `.git`, and
+    matched on the absolute path. On this repository it turned a two-second scan
+    into minutes, which made the CI gate unusable at its default of `.`.
+    """
+    root = tmp_path / "proj"
+    (root / ".venv" / "lib").mkdir(parents=True)
+    (root / ".git" / "objects").mkdir(parents=True)
+    (root / "src").mkdir(parents=True)
+    elf = b"\x7fELF" + b"\x00" * 64 + b"OpenSSL 3.0.11" + b"\x00" * 16
+    (root / ".venv" / "lib" / "vendored.so").write_bytes(elf)
+    (root / ".git" / "objects" / "pack.bin").write_bytes(elf)
+    (root / "src" / "app.bin").write_bytes(elf)
+
+    locations = {a.primary_location
+                 for a in BinaryScanner().scan(str(root)).assets}
+    assert locations, "the one real binary should still be found"
+    assert all(loc.startswith("src/") for loc in locations), locations
+
+
+def test_a_virtualenv_is_still_scannable_when_it_is_the_target(tmp_path):
+    """The skip is relative to the scan root, so pointing at a virtualenv on
+    purpose still works — the same rule the source scanner already used."""
+    venv = tmp_path / ".venv" / "lib"
+    venv.mkdir(parents=True)
+    (venv / "vendored.so").write_bytes(
+        b"\x7fELF" + b"\x00" * 64 + b"OpenSSL 3.0.11" + b"\x00" * 16)
+    assert BinaryScanner().scan(str(venv)).assets

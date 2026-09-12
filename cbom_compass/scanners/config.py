@@ -44,7 +44,7 @@ from .ssh import KEX as SSH_KEX
 from .ssh import MACS as SSH_MACS
 from .ssh import _strip_etm
 
-SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".tox"}
+SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".tox", ".cbom-workspace"}
 # Post-quantum KEMs, for recognising a hybrid IKE proposal.
 PQC_KEMS = {"ML-KEM", "sntrup761", "FrodoKEM", "NTRU", "HQC"}
 MAX_BYTES = 2 * 1024 * 1024        # a config file larger than this is not a config file
