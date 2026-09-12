@@ -14,3 +14,4 @@ targets/
 .cbom-workspace/
 demo-risk-summary.pdf
 *.log
+build/

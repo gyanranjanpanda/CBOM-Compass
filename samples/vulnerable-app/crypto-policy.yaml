@@ -59,3 +59,35 @@ services:
     data_class: operational    # X = 3y
     criticality: low
     surface: containerised
+
+  # --- infrastructure: configured rather than coded --------------------------
+  - name: jump-host
+    paths: ["deploy/sshd_config*", "*/sshd_config*"]
+    data_class: regulated      # X = 25y — audit trail of every admin session
+    criticality: high
+    surface: public-api
+
+  - name: site-to-site-vpn
+    paths: ["deploy/ipsec.conf*", "*/ipsec.conf*", "deploy/*.ovpn*", "*/*.ovpn*"]
+    data_class: financial      # X = 7y — settlement traffic
+    criticality: high
+    surface: internal-service
+
+  - name: edge-tls
+    paths: ["deploy/nginx.conf*", "*/nginx.conf*"]
+    data_class: pii            # X = 10y
+    criticality: high
+    surface: public-api
+
+  # --- key material ----------------------------------------------------------
+  - name: hsm-partition
+    paths: ["pkcs11:*"]
+    data_class: regulated      # X = 25y — a root CA outlives everything
+    criticality: high
+    surface: embedded          # Y = 5y — vendor firmware, not a library bump
+
+  - name: managed-key-vault
+    paths: ["azure:*", "aws:*", "gcp:*"]
+    data_class: financial
+    criticality: medium
+    surface: internal-service
