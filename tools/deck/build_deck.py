@@ -1,6 +1,28 @@
-"""Build the SIH idea-submission deck for CBOM Compass — visual, not text-heavy."""
+"""Rebuild the SIH idea-submission deck *inside* the official SIH template.
+
+The deck is not generated from a blank presentation. It opens the SIH template
+file, keeps every piece of template furniture on each slide — the title
+placeholder, the footer band, the slide-number and footer placeholders, the
+Team Nexus badge, the SIH logo and the title-slide artwork — and replaces only
+the content shapes.
+
+Everything it draws is snapped to the template's own grid, measured from the
+template itself rather than invented:
+
+    margin            0.30in, content width 12.73in
+    section heading   label at y, hairline rule at y + 0.28
+    6-column          x = 0.30 + n * 2.13, width 2.06   (stat tiles, pipeline)
+    4-column          x = 0.30 + n * 3.21, width 3.13   (benefit cards)
+    3-column          x = 0.30 + n * 4.28, width 4.13   (reference cards)
+    2-column          left 0.30 w 6.30 · right 6.75 w 6.28
+    footer band       y = 6.95, so content must end by 6.90
+
+Type and colour also come from the template: Arial throughout, with the palette
+the original slides already used.
+"""
 from __future__ import annotations
 
+import copy
 import sys
 from pathlib import Path
 
@@ -10,48 +32,68 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Emu, Inches, Pt
 
-SHOTS = Path(sys.argv[1] if len(sys.argv) > 1 else "build/shots")
-LOGO = Path(sys.argv[2] if len(sys.argv) > 2 else "tools/deck/sih-logo.png")
-OUT = Path(sys.argv[3] if len(sys.argv) > 3 else
-           "SIH2025-IDEA-CBOM-Compass-TeamNexus-v2.pptx")
+TEMPLATE = Path(sys.argv[1] if len(sys.argv) > 1
+                else "SIH2025-IDEA-CBOM-Compass-TeamNexus.pptx")
+SHOTS = Path(sys.argv[2] if len(sys.argv) > 2 else "build/shots")
+OUT = Path(sys.argv[3] if len(sys.argv) > 3
+           else "SIH2025-IDEA-CBOM-Compass-TeamNexus-v2.pptx")
 
-# ---------------------------------------------------------------- palette
+# ------------------------------------------------------------------ palette
 INK = RGBColor(0x1F, 0x29, 0x33)
-INK2 = RGBColor(0x5A, 0x6B, 0x7B)
-INK3 = RGBColor(0x8F, 0xA3, 0xB8)
+MUTED = RGBColor(0x5A, 0x6B, 0x7C)
 NAVY = RGBColor(0x1F, 0x49, 0x7D)
 TEAL = RGBColor(0x0E, 0x8C, 0x86)
-TEAL_L = RGBColor(0xE3, 0xF4, 0xF2)
 BLUE = RGBColor(0x00, 0x70, 0xC0)
-BLUE_L = RGBColor(0xE4, 0xF0, 0xFA)
-RED = RGBColor(0xC0, 0x39, 0x2B)
-RED_L = RGBColor(0xFB, 0xE9, 0xE7)
-AMBER = RGBColor(0xB9, 0x77, 0x0E)
-AMBER_L = RGBColor(0xFD, 0xF4, 0xE3)
-GREEN = RGBColor(0x1E, 0x84, 0x49)
-GREEN_L = RGBColor(0xE6, 0xF5, 0xEC)
+RED = RGBColor(0x8C, 0x2A, 0x1E)
+GREEN = RGBColor(0x1A, 0x5C, 0x36)
+AMBER = RGBColor(0x6B, 0x4A, 0x08)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 PANEL = RGBColor(0xF3, 0xF8, 0xFC)
 BORDER = RGBColor(0xCB, 0xDD, 0xEC)
-FONT = "Segoe UI"
+TEAL_L = RGBColor(0xE6, 0xF4, 0xF3)
+BLUE_L = RGBColor(0xE7, 0xF1, 0xFA)
+RED_L = RGBColor(0xFB, 0xED, 0xEA)
+AMBER_L = RGBColor(0xFF, 0xF6, 0xE5)
+GREEN_L = RGBColor(0xE9, 0xF4, 0xEC)
+FONT = "Arial"
 
-W, H = 13.333, 7.5
+# -------------------------------------------------------------------- grid
+M = 0.30                      # left margin
+CW = 12.73                    # content width
+COL6 = [round(M + n * 2.13, 3) for n in range(6)]
+COL4 = [round(M + n * 3.21, 3) for n in range(4)]
+COL3 = [round(M + n * 4.28, 3) for n in range(3)]
+W6, W4, W3 = 2.06, 3.13, 4.13
+LEFT_X, LEFT_W = 0.30, 6.30
+RIGHT_X, RIGHT_W = 6.75, 6.28
+FOOTER_Y = 6.95
 
 
-# ---------------------------------------------------------------- helpers
-def new_deck() -> Presentation:
-    prs = Presentation()
-    prs.slide_width = Inches(W)
-    prs.slide_height = Inches(H)
-    return prs
+# ----------------------------------------------------------------- helpers
+def keep_furniture(slide, extra_keep=()):
+    """Delete content shapes; keep everything the template owns.
 
-
-def blank(prs):
-    return prs.slides.add_slide(prs.slide_layouts[6])
+    The team badge is matched on its text rather than on "Oval", because the
+    padlock drawing also produces ovals — a name-prefix rule would spare them on
+    a second pass and quietly accumulate debris.
+    """
+    for sh in list(slide.shapes):
+        name = sh.name
+        label = sh.text_frame.text.strip() if sh.has_text_frame else ""
+        keep = (
+            sh.is_placeholder
+            or name in extra_keep
+            or name.startswith("Picture 2")
+            or label == "Team Nexus"
+            # the footer band: a full-width bar sitting on the footer line
+            or (Emu(sh.width).inches > 13 and Emu(sh.top).inches >= 6.9)
+        )
+        if not keep:
+            sh._element.getparent().remove(sh._element)
 
 
 def box(slide, x, y, w, h, fill=None, line=None, shape=MSO_SHAPE.ROUNDED_RECTANGLE,
-        radius=0.06, lw=0.75):
+        radius=0.10, lw=0.75):
     s = slide.shapes.add_shape(shape, Inches(x), Inches(y), Inches(w), Inches(h))
     try:
         s.adjustments[0] = radius
@@ -72,39 +114,27 @@ def box(slide, x, y, w, h, fill=None, line=None, shape=MSO_SHAPE.ROUNDED_RECTANG
     return s
 
 
-def tb(slide, x, y, w, h, blocks, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP,
-       wrap=True):
-    """blocks: list of dicts {t, sz, c, b, i, sp (space_after pt), ls (line spacing)}"""
-    s = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
-    tf = s.text_frame
-    tf.word_wrap = wrap
-    tf.vertical_anchor = anchor
-    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
-    for i, blk in enumerate(blocks):
-        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.alignment = align
-        if blk.get("sp") is not None:
-            p.space_after = Pt(blk["sp"])
-        if blk.get("ls"):
-            p.line_spacing = blk["ls"]
-        r = p.add_run()
-        r.text = blk["t"]
-        f = r.font
-        f.name = FONT
-        f.size = Pt(blk.get("sz", 11))
-        f.bold = blk.get("b", False)
-        f.italic = blk.get("i", False)
-        f.color.rgb = blk.get("c", INK)
-    return s
-
-
-def fill_text(shape, blocks, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE,
-              pad=0.10):
+def text_into(shape, blocks, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE, pad=0.10):
     tf = shape.text_frame
     tf.word_wrap = True
     tf.vertical_anchor = anchor
     tf.margin_left = tf.margin_right = Inches(pad)
-    tf.margin_top = tf.margin_bottom = Inches(0.04)
+    tf.margin_top = tf.margin_bottom = Inches(0.03)
+    _runs(tf, blocks, align)
+    return shape
+
+
+def tb(slide, x, y, w, h, blocks, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
+    s = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    tf = s.text_frame
+    tf.word_wrap = True
+    tf.vertical_anchor = anchor
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+    _runs(tf, blocks, align)
+    return s
+
+
+def _runs(tf, blocks, align):
     for i, blk in enumerate(blocks):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.alignment = align
@@ -116,80 +146,82 @@ def fill_text(shape, blocks, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.MIDDLE,
         r.text = blk["t"]
         f = r.font
         f.name = FONT
-        f.size = Pt(blk.get("sz", 11))
+        f.size = Pt(blk.get("sz", 8.2))
         f.bold = blk.get("b", False)
-        f.italic = blk.get("i", False)
         f.color.rgb = blk.get("c", INK)
-    return shape
 
 
-def chip(slide, x, y, w, h, text, fill, fg, sz=9.5, bold=True):
-    s = box(slide, x, y, w, h, fill=fill, line=None, radius=0.5)
-    fill_text(s, [{"t": text, "sz": sz, "c": fg, "b": bold}],
-              align=PP_ALIGN.CENTER, pad=0.06)
-    return s
-
-
-def rule(slide, x, y, w, color=BORDER, weight=1.0):
+def bar(slide, x, y, w, h, color):
     s = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y),
-                               Inches(w), Pt(weight))
-    s.fill.solid()
-    s.fill.fore_color.rgb = color
-    s.line.fill.background()
-    s.shadow.inherit = False
-    return s
-
-
-def vrule(slide, x, y, h, color=BORDER, weight=1.0):
-    s = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y),
-                               Pt(weight), Inches(h))
-    s.fill.solid()
-    s.fill.fore_color.rgb = color
-    s.line.fill.background()
-    s.shadow.inherit = False
-    return s
-
-
-def chevron(slide, x, y, w, h, head, body, accent):
-    s = slide.shapes.add_shape(MSO_SHAPE.CHEVRON, Inches(x), Inches(y),
                                Inches(w), Inches(h))
     s.fill.solid()
-    s.fill.fore_color.rgb = PANEL
-    s.line.color.rgb = accent
-    s.line.width = Pt(1.0)
+    s.fill.fore_color.rgb = color
+    s.line.fill.background()
     s.shadow.inherit = False
-    fill_text(s, [
-        {"t": head, "sz": 10.5, "c": accent, "b": True, "sp": 1},
-        {"t": body, "sz": 8.5, "c": INK2, "ls": 0.92},
-    ], align=PP_ALIGN.CENTER, pad=0.13)
     return s
 
 
-def padlock(slide, cx, top, scale=1.0, color=TEAL, bg=WHITE, broken=False):
-    """A padlock drawn from primitives: a ring with its lower half masked, and a body."""
-    ring_d = 0.62 * scale
-    body_w, body_h = 0.88 * scale, 0.66 * scale
-    ring = slide.shapes.add_shape(
-        MSO_SHAPE.DONUT, Inches(cx - ring_d / 2), Inches(top),
-        Inches(ring_d), Inches(ring_d))
-    ring.adjustments[0] = 0.19
+def section(slide, y, label, x=M, w=CW):
+    """The template's section heading: label, then a hairline rule."""
+    tb(slide, x, y, w, 0.29, [{"t": label, "sz": 11, "c": NAVY, "b": True}])
+    bar(slide, x, y + 0.28, w, 0.02, TEAL)
+
+
+def card(slide, x, y, w, h, accent, fill=PANEL):
+    """The template's card: rounded panel with a coloured left edge."""
+    c = box(slide, x, y, w, h, fill=fill, line=BORDER, radius=0.06)
+    bar(slide, x, y, 0.05, h, accent)
+    return c
+
+
+def tile(slide, x, y, w, h, accent, fill=WHITE):
+    """The template's stat tile: rounded panel with a coloured top edge."""
+    t = box(slide, x, y, w, h, fill=fill, line=BORDER, radius=0.08)
+    bar(slide, x, y, w, 0.04, accent)
+    return t
+
+
+def shot(slide, name, x, y, w):
+    pic = slide.shapes.add_picture(str(SHOTS / name), Inches(x), Inches(y),
+                                   width=Inches(w))
+    frame = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y),
+                                   Inches(w), Emu(pic.height))
+    frame.fill.background()
+    frame.line.color.rgb = BORDER
+    frame.line.width = Pt(0.75)
+    frame.shadow.inherit = False
+    return y + Emu(pic.height).inches
+
+
+def caption(slide, x, y, w, t):
+    """Centred under the picture, which is how the template does it."""
+    tb(slide, x, y, w, 0.24, [{"t": t, "sz": 7.5, "c": MUTED, "ls": 0.95}],
+       align=PP_ALIGN.CENTER)
+
+
+def padlock(slide, cx, top, scale, color, bg, broken=False):
+    """A padlock from primitives: a ring masked to a shackle, plus a body."""
+    d = 0.46 * scale
+    bw, bh = 0.62 * scale, 0.46 * scale
+    ring = slide.shapes.add_shape(MSO_SHAPE.DONUT, Inches(cx - d / 2), Inches(top),
+                                  Inches(d), Inches(d))
+    ring.adjustments[0] = 0.20
     ring.fill.solid()
     ring.fill.fore_color.rgb = color
     ring.line.fill.background()
     ring.shadow.inherit = False
-    # Mask the lower half of the ring so it reads as a shackle.
-    mask = slide.shapes.add_shape(
-        MSO_SHAPE.RECTANGLE, Inches(cx - ring_d / 2 - 0.02),
-        Inches(top + ring_d * 0.52), Inches(ring_d + 0.04), Inches(ring_d * 0.55))
+    mask = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(cx - d / 2 - 0.02),
+                                  Inches(top + d * 0.52), Inches(d + 0.04),
+                                  Inches(d * 0.56))
     mask.fill.solid()
     mask.fill.fore_color.rgb = bg
     mask.line.fill.background()
     mask.shadow.inherit = False
 
-    body_top = top + ring_d * 0.62
-    body = slide.shapes.add_shape(
-        MSO_SHAPE.ROUNDED_RECTANGLE, Inches(cx - body_w / 2), Inches(body_top),
-        Inches(body_w), Inches(body_h))
+    body_top = top + d * 0.62
+    body = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,
+                                  Inches(cx - bw / 2), Inches(body_top),
+                                  Inches(bw), Inches(bh))
     body.adjustments[0] = 0.18
     body.fill.solid()
     body.fill.fore_color.rgb = color
@@ -197,586 +229,551 @@ def padlock(slide, cx, top, scale=1.0, color=TEAL, bg=WHITE, broken=False):
     body.shadow.inherit = False
 
     if broken:
-        # A diagonal slash through the shackle: the lock is open.
-        cut = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE, Inches(cx - ring_d * 0.62),
-            Inches(top + ring_d * 0.16), Inches(ring_d * 1.3), Inches(0.075))
+        cut = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(cx - d * 0.64),
+                                     Inches(top + d * 0.14), Inches(d * 1.3),
+                                     Inches(0.055))
         cut.fill.solid()
         cut.fill.fore_color.rgb = bg
         cut.line.fill.background()
         cut.shadow.inherit = False
         cut.rotation = -32
     else:
-        keyhole = slide.shapes.add_shape(
-            MSO_SHAPE.OVAL, Inches(cx - 0.075 * scale),
-            Inches(body_top + body_h * 0.28), Inches(0.15 * scale), Inches(0.15 * scale))
-        keyhole.fill.solid()
-        keyhole.fill.fore_color.rgb = bg
-        keyhole.line.fill.background()
-        keyhole.shadow.inherit = False
-    return body_top + body_h
+        kh = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(cx - 0.05 * scale),
+                                    Inches(body_top + bh * 0.3),
+                                    Inches(0.10 * scale), Inches(0.10 * scale))
+        kh.fill.solid()
+        kh.fill.fore_color.rgb = bg
+        kh.line.fill.background()
+        kh.shadow.inherit = False
 
 
-def chrome(prs, slide, number, title, kicker=None):
-    """SIH template furniture: title, team badge, logo, footer, slide number."""
-    tb(slide, 0.45, 0.28, 8.6, 0.58,
-       [{"t": title, "sz": 25, "c": NAVY, "b": True}])
-    if kicker:
-        tb(slide, 0.45, 0.80, 9.4, 0.3, [{"t": kicker, "sz": 10.5, "c": INK2}])
-    rule(slide, 0.45, 1.10 if kicker else 0.95, 12.45, BORDER, 1.0)
+def set_title(slide, text):
+    """Retitle without disturbing the placeholder's own structure.
 
-    badge = box(slide, 9.28, 0.30, 1.32, 0.36, fill=TEAL_L, line=TEAL, radius=0.5)
-    fill_text(badge, [{"t": "Team Nexus", "sz": 9.5, "c": TEAL, "b": True}],
-              align=PP_ALIGN.CENTER, pad=0.04)
-    if LOGO.exists():
-        slide.shapes.add_picture(str(LOGO), Inches(10.95), Inches(0.16),
-                                 height=Inches(0.62))
-
-    rule(slide, 0, 7.02, W, BORDER, 0.75)
-    tb(slide, 0.45, 7.12, 5.0, 0.3,
-       [{"t": "@SIH Idea submission- Template", "sz": 8.5, "c": INK3}])
-    tb(slide, 11.6, 7.12, 1.3, 0.3, [{"t": str(number), "sz": 8.5, "c": INK3}],
-       align=PP_ALIGN.RIGHT)
+    The template's title paragraph is an empty run, a line break, then the
+    title. Writing into run 0 puts the text *above* the break, which slides the
+    title up into the Team Nexus badge — so only the run that already carries
+    text is replaced.
+    """
+    for sh in slide.shapes:
+        if not (sh.is_placeholder and sh.placeholder_format.idx == 0):
+            continue
+        for para in sh.text_frame.paragraphs:
+            for run in para.runs:
+                if run.text.strip():
+                    run.text = text
+                    return
+        return
 
 
-def shot(slide, name, x, y, w, caption=None):
-    p = SHOTS / name
-    pic = slide.shapes.add_picture(str(p), Inches(x), Inches(y), width=Inches(w))
-    frame = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y),
-                                   Inches(w), Emu(pic.height))
-    frame.fill.background()
-    frame.line.color.rgb = BORDER
-    frame.line.width = Pt(0.75)
-    frame.shadow.inherit = False
-    bottom = y + Emu(pic.height).inches
-    if caption:
-        tb(slide, x, bottom + 0.07, w, 0.3,
-           [{"t": caption, "sz": 8, "c": INK3, "ls": 0.95}])
-    return bottom
+# =========================================================== SLIDE 1 : title
+def slide1(slide):
+    # Keep the template's title-slide artwork; replace only the copy blocks,
+    # at the positions the template already used.
+    keep_furniture(slide, extra_keep=("Rectangle 24", "Freeform: Shape 26",
+                                      "Picture 4"))
 
-
-# ================================================================ SLIDE 1
-def slide_title(prs):
-    s = blank(prs)
-    band = slide_bg = box(s, 0, 0, W, H, fill=WHITE, line=None, radius=0,
-                          shape=MSO_SHAPE.RECTANGLE)
-    accent = box(s, 0, 0, 0.22, H, fill=NAVY, line=None, radius=0,
-                 shape=MSO_SHAPE.RECTANGLE)
-
-    if LOGO.exists():
-        s.shapes.add_picture(str(LOGO), Inches(10.9), Inches(0.42),
-                             height=Inches(0.78))
-
-    tb(s, 0.72, 0.55, 7.5, 0.32,
-       [{"t": "SMART INDIA HACKATHON 2025", "sz": 12, "c": TEAL, "b": True}])
-    tb(s, 0.70, 0.92, 8.4, 1.0, [{"t": "CBOM COMPASS", "sz": 48, "c": NAVY, "b": True}])
-    tb(s, 0.72, 1.85, 6.80, 0.8, [
-        {"t": "An X-ray for your organisation’s encryption.", "sz": 15, "c": INK,
-         "b": True, "sp": 3},
-        {"t": "Find every lock in the building, work out which ones a quantum "
-              "computer can pick and which ones the regulator bans first — then "
-              "hand back a prioritised locksmith’s list.", "sz": 11, "c": INK2,
-         "ls": 1.06},
-    ])
-    rule(s, 0.72, 2.92, 3.0, TEAL, 2.5)
-
-    meta = [
-        ("Problem Statement ID", "SIH25164"),
-        ("Theme", "Cybersecurity"),
-        ("PS Category", "Software"),
-        ("Team ID", "<TEAM ID>"),
-        ("Team Name", "Team Nexus"),
-    ]
-    y = 3.24
-    for label, value in meta:
-        tb(s, 0.72, y, 1.85, 0.26, [{"t": label, "sz": 9.5, "c": INK3}])
-        tb(s, 2.62, y, 4.6, 0.26, [{"t": value, "sz": 10.5, "c": INK, "b": True}])
-        y += 0.425
-    tb(s, 0.72, y + 0.14, 6.6, 0.6, [
-        {"t": "Problem Statement Title", "sz": 9.5, "c": INK3, "sp": 2},
+    # Starts at 2.30, where the template's own metadata block started: any
+    # higher and it runs into the "TITLE PAGE" subtitle placeholder above.
+    tb(slide, 0.36, 2.30, 6.10, 2.86, [
+        {"t": "Problem Statement ID – ", "sz": 10, "c": MUTED, "sp": 0},
+        {"t": "SIH25164", "sz": 12, "c": INK, "b": True, "sp": 6},
+        {"t": "Problem Statement Title – ", "sz": 10, "c": MUTED, "sp": 0},
         {"t": "Development of a tool for the identification and assessment of "
               "cryptographic assets and their post-quantum migration readiness",
-         "sz": 10, "c": INK, "b": True, "ls": 1.0},
+         "sz": 10, "c": INK, "b": True, "sp": 6, "ls": 1.02},
+        {"t": "Theme – ", "sz": 10, "c": MUTED, "sp": 0},
+        {"t": "Cybersecurity", "sz": 10, "c": INK, "b": True, "sp": 6},
+        {"t": "PS Category – ", "sz": 10, "c": MUTED, "sp": 0},
+        {"t": "Software", "sz": 10, "c": INK, "b": True, "sp": 6},
+        {"t": "Team ID – ", "sz": 10, "c": MUTED, "sp": 0},
+        {"t": "<TEAM ID>", "sz": 10, "c": INK, "b": True, "sp": 6},
+        {"t": "Team Name (Registered on portal) – ", "sz": 10, "c": MUTED,
+         "sp": 0},
+        {"t": "Team Nexus", "sz": 10, "c": INK, "b": True},
     ])
 
-    # --- hero: an intact lock, and the same lock in 2031 --------------------
-    hero = box(s, 7.75, 1.55, 5.05, 4.5, fill=PANEL, line=BORDER, radius=0.035)
-    tb(s, 8.05, 1.76, 4.45, 0.3,
-       [{"t": "THE SHIFT WE ARE MEASURING", "sz": 9, "c": INK3, "b": True}],
-       align=PP_ALIGN.CENTER)
+    bar(slide, 0.36, 5.32, 1.30, 0.04, TEAL)
+    tb(slide, 0.36, 5.45, 6.10, 0.80, [
+        {"t": "CBOM Compass — an X-ray for your organisation’s encryption.",
+         "sz": 12.5, "c": NAVY, "b": True, "sp": 4, "ls": 1.0},
+        {"t": "Find every lock in the building, work out which ones a quantum "
+              "computer can pick and which ones the regulator bans first — then "
+              "hand back a prioritised locksmith’s list.",
+         "sz": 10.5, "c": MUTED, "ls": 1.04},
+    ])
 
-    padlock(s, 9.20, 2.18, scale=1.05, color=TEAL, bg=PANEL)
-    tb(s, 8.15, 3.38, 2.1, 0.6, [
-        {"t": "TODAY", "sz": 10, "c": TEAL, "b": True, "sp": 2},
-        {"t": "RSA and ECC hold\nthe door shut.", "sz": 9.5, "c": INK2, "ls": 0.95},
-    ], align=PP_ALIGN.CENTER)
-
-    arrow = s.shapes.add_shape(MSO_SHAPE.RIGHT_ARROW, Inches(10.02), Inches(2.62),
-                               Inches(0.52), Inches(0.28))
-    arrow.fill.solid()
-    arrow.fill.fore_color.rgb = INK3
-    arrow.line.fill.background()
-    arrow.shadow.inherit = False
-
-    padlock(s, 11.35, 2.18, scale=1.05, color=RED, bg=PANEL, broken=True)
-    tb(s, 10.30, 3.38, 2.1, 0.6, [
-        {"t": "Q-DAY", "sz": 10, "c": RED, "b": True, "sp": 2},
-        {"t": "Shor’s algorithm\nopens both.", "sz": 9.5, "c": INK2, "ls": 0.95},
-    ], align=PP_ALIGN.CENTER)
-
-    rule(s, 8.15, 4.24, 4.25, BORDER, 1.0)
-    tb(s, 8.15, 4.40, 4.25, 0.9, [
-        {"t": "No key size fixes this. The mathematics is gone —", "sz": 9.5,
-         "c": INK2, "sp": 2, "ls": 1.0},
-        {"t": "so every RSA and ECC key you own has an expiry date.",
-         "sz": 9.5, "c": INK, "b": True, "ls": 1.0},
-    ], align=PP_ALIGN.CENTER)
-
-    stats = [("8", "sources scanned"), ("191", "assets in the demo"),
-             ("100%", "precision, measured")]
-    x = 8.05
-    for value, label in stats:
-        t = box(s, x, 5.28, 1.50, 0.58, fill=WHITE, line=BORDER, radius=0.1)
-        fill_text(t, [
+    for i, (value, label) in enumerate([("8", "sources scanned"),
+                                        ("191", "assets, demo scan"),
+                                        ("262", "tests green")]):
+        x = 0.36 + i * 2.05
+        t = tile(slide, x, 6.34, 1.90, 0.56, TEAL)
+        text_into(t, [
             {"t": value, "sz": 15, "c": NAVY, "b": True, "sp": 0, "ls": 0.85},
-            {"t": label, "sz": 7.5, "c": INK3, "ls": 0.9},
-        ], align=PP_ALIGN.CENTER, pad=0.03)
-        x += 1.60
-
-    tb(s, 0.72, 6.62, 9.0, 0.3,
-       [{"t": "Working prototype  ·  262 automated tests green  ·  runs offline "
-              "on one laptop", "sz": 10, "c": TEAL, "b": True}])
+            {"t": label, "sz": 7.5, "c": MUTED, "ls": 0.9},
+        ], align=PP_ALIGN.CENTER, pad=0.04)
 
 
-# ================================================================ SLIDE 2
-def slide_idea(prs):
-    s = blank(prs)
-    chrome(prs, s, 2, "IDEA TITLE",
-           "CBOM Compass — find it, judge it, rank it, fix it.")
+# ============================================================ SLIDE 2 : idea
+def slide2(slide):
+    keep_furniture(slide)
+    set_title(slide, "IDEA TITLE")
 
-    # ---- Row A: harvest now, decrypt later, as a three-panel story --------
-    tb(s, 0.45, 1.22, 8.0, 0.28,
-       [{"t": "THE PROBLEM, IN ONE PICTURE — “harvest now, decrypt later”",
-         "sz": 10.5, "c": NAVY, "b": True}])
+    banner = box(slide, M, 1.32, CW, 0.52, fill=TEAL_L, line=TEAL, radius=0.14)
+    tb(slide, 0.50, 1.44, 8.30, 0.30,
+       [{"t": "CBOM COMPASS — an X-ray for your organisation’s encryption",
+         "sz": 12.5, "c": NAVY, "b": True}])
+    tb(slide, 8.90, 1.46, 4.05, 0.28,
+       [{"t": "SIH25164  ·  Cybersecurity  ·  working prototype", "sz": 9.2,
+         "c": TEAL, "b": True}], align=PP_ALIGN.RIGHT)
 
+    section(slide, 1.96, "Proposed Solution (Describe your Idea/Solution/Prototype)")
+
+    # --- the problem, as three panels on the 3-column grid -----------------
+    tb(slide, M, 2.32, CW, 0.24,
+       [{"t": "THE PROBLEM, IN ONE PICTURE  —  “harvest now, decrypt later”",
+         "sz": 9.2, "c": MUTED, "b": True}])
     panels = [
-        (TEAL, TEAL_L, "1  ·  TODAY", "Your data is locked with\ntoday’s encryption.", False),
-        (AMBER, AMBER_L, "2  ·  TODAY", "An attacker copies the locked\nfile. They cannot open it — yet.", None),
-        (RED, RED_L, "3  ·  ~2031", "A quantum computer opens it.\nEverything since today is exposed.", True),
+        (TEAL, TEAL_L, "1  ·  TODAY",
+         "Your data is locked with today’s encryption.", False),
+        (AMBER, AMBER_L, "2  ·  TODAY",
+         "An attacker copies the locked file. They cannot open it — yet.", None),
+        (RED, RED_L, "3  ·  ~2031",
+         "A quantum computer opens it. Everything recorded since today is exposed.",
+         True),
     ]
-    x = 0.45
-    for accent, light, head, body, broken in panels:
-        p = box(s, x, 1.58, 3.74, 1.68, fill=light, line=accent, radius=0.05)
-        tb(s, x + 0.22, 1.74, 2.3, 0.26, [{"t": head, "sz": 9.5, "c": accent, "b": True}])
-        tb(s, x + 0.22, 2.08, 2.48, 0.9,
-           [{"t": body, "sz": 10, "c": INK, "ls": 1.02}])
+    for i, (accent, light, head, body, broken) in enumerate(panels):
+        x = COL3[i]
+        box(slide, x, 2.60, W3, 1.14, fill=light, line=accent, radius=0.06)
+        tb(slide, x + 0.16, 2.70, 2.20, 0.20,
+           [{"t": head, "sz": 8.6, "c": accent, "b": True}])
+        tb(slide, x + 0.16, 2.94, 2.86, 0.72,
+           [{"t": body, "sz": 9.2, "c": INK, "ls": 1.04}])
         if broken is None:
-            # a copy icon: two offset outlined pages
-            for dx, dy, fc in ((0.10, 0.10, None), (0.0, 0.0, light)):
-                pg = box(s, x + 2.92 + dx, 1.86 + dy, 0.52, 0.66,
-                         fill=fc if fc else light, line=accent, radius=0.08)
+            box(slide, x + 3.30, 2.86, 0.40, 0.50, fill=light, line=accent,
+                radius=0.10)
+            box(slide, x + 3.20, 2.96, 0.40, 0.50, fill=light, line=accent,
+                radius=0.10)
         else:
-            padlock(s, x + 3.22, 1.80, scale=0.92, color=accent, bg=light,
-                    broken=broken)
-        x += 3.90
+            padlock(slide, x + 3.48, 2.80, 1.0, accent, light, broken=broken)
+        if i < 2:
+            a = slide.shapes.add_shape(MSO_SHAPE.RIGHT_ARROW,
+                                       Inches(x + W3 + 0.02), Inches(3.08),
+                                       Inches(0.11), Inches(0.18))
+            a.fill.solid()
+            a.fill.fore_color.rgb = MUTED
+            a.line.fill.background()
+            a.shadow.inherit = False
 
-    for ax in (4.16, 8.06):
-        a = s.shapes.add_shape(MSO_SHAPE.RIGHT_ARROW, Inches(ax), Inches(2.30),
-                               Inches(0.26), Inches(0.22))
-        a.fill.solid()
-        a.fill.fore_color.rgb = INK3
-        a.line.fill.background()
-        a.shadow.inherit = False
+    # --- left: Mosca drawn.  right: what the tool does ---------------------
+    tb(slide, LEFT_X, 3.86, LEFT_W, 0.24,
+       [{"t": "HOW WE DECIDE WHAT MOVES FIRST  —  Mosca’s inequality, drawn",
+         "sz": 9.2, "c": MUTED, "b": True}])
+    box(slide, LEFT_X, 4.12, LEFT_W, 1.22, fill=PANEL, line=BORDER, radius=0.06)
 
-    # ---- Row B left: Mosca, drawn --------------------------------------
-    m = box(s, 0.45, 3.42, 6.55, 2.12, fill=PANEL, line=BORDER, radius=0.04)
-    tb(s, 0.68, 3.56, 6.1, 0.28,
-       [{"t": "HOW WE DECIDE WHAT MOVES FIRST — Mosca’s inequality, drawn",
-         "sz": 10, "c": NAVY, "b": True}])
+    x0, span, years = 0.52, 5.86, 15.0
+    per = span / years
+    xb = box(slide, x0, 4.26, per * 10, 0.26, fill=TEAL, line=None, radius=0.16)
+    text_into(xb, [{"t": "X · data must stay secret · 10 yrs", "sz": 7.8,
+                    "c": WHITE, "b": True}], align=PP_ALIGN.CENTER, pad=0.04)
+    yb = box(slide, x0 + per * 10, 4.26, per * 5, 0.26, fill=BLUE, line=None,
+             radius=0.16)
+    text_into(yb, [{"t": "Y · migrate · 5", "sz": 7.8, "c": WHITE, "b": True}],
+              align=PP_ALIGN.CENTER, pad=0.03)
 
-    x0, span_in, years = 0.78, 5.55, 15.0          # 2026 → 2041
-    per = span_in / years
-    bar_y, bar_h = 4.02, 0.30
+    zx = x0 + per * 5
+    bar(slide, zx, 4.16, 0.022, 0.50, RED)
+    tb(slide, zx - 0.55, 4.68, 1.10, 0.20,
+       [{"t": "Q-Day 2031", "sz": 7.8, "c": RED, "b": True}], align=PP_ALIGN.CENTER)
+    bar(slide, x0, 4.62, span, 0.01, BORDER)
+    # End labels are aligned to the axis ends rather than centred on the tick,
+    # so the first does not hang past the panel's left edge and break the grid.
+    ticks = (2026, 2031, 2036, 2041)
+    for n, year in enumerate(ticks):
+        tick_x = x0 + per * (year - 2026)
+        if n == 0:
+            bx, align = tick_x, PP_ALIGN.LEFT
+        elif n == len(ticks) - 1:
+            bx, align = tick_x - 0.56, PP_ALIGN.RIGHT
+        else:
+            bx, align = tick_x - 0.28, PP_ALIGN.CENTER
+        tb(slide, bx, 4.90, 0.56, 0.18,
+           [{"t": str(year), "sz": 7.5, "c": MUTED}], align=align)
 
-    xb = box(s, x0, bar_y, per * 10, bar_h, fill=TEAL, line=None, radius=0.12)
-    fill_text(xb, [{"t": "X  ·  data must stay secret  ·  10 yrs", "sz": 8.5,
-                    "c": WHITE, "b": True}], align=PP_ALIGN.CENTER, pad=0.05)
-    yb = box(s, x0 + per * 10, bar_y, per * 5, bar_h, fill=BLUE, line=None, radius=0.12)
-    fill_text(yb, [{"t": "Y  ·  migration  ·  5 yrs", "sz": 8.5, "c": WHITE,
-                    "b": True}], align=PP_ALIGN.CENTER, pad=0.05)
+    verdict = box(slide, x0, 5.08, span, 0.22, fill=RED_L, line=RED, radius=0.3)
+    text_into(verdict, [{"t": "X + Y = 15 yrs   >   Z = 5 yrs      →   already "
+                              "overdue", "sz": 8.2, "c": RED, "b": True}],
+              align=PP_ALIGN.CENTER, pad=0.05)
 
-    zx = x0 + per * 5                                # Q-Day at 2031
-    vrule(s, zx, 3.88, 0.72, RED, 2.25)
-    tb(s, zx - 0.62, 4.62, 1.30, 0.26,
-       [{"t": "Q-Day  2031", "sz": 8.5, "c": RED, "b": True}], align=PP_ALIGN.CENTER)
+    tb(slide, RIGHT_X, 3.86, RIGHT_W, 0.24,
+       [{"t": "WHAT THE TOOL ACTUALLY DOES", "sz": 9.2, "c": MUTED, "b": True}])
+    steps = [("1  SEE", "every place\nencryption hides", TEAL),
+             ("2  JUDGE", "broken, weak,\nor genuinely fine", BLUE),
+             ("3  RANK", "what breaks\nyou first", AMBER),
+             ("4  FIX", "the exact NIST\nreplacement", GREEN)]
+    sw = (RIGHT_W - 3 * 0.08) / 4
+    for i, (head, body, accent) in enumerate(steps):
+        x = RIGHT_X + i * (sw + 0.08)
+        box(slide, x, 4.12, sw, 0.86, fill=PANEL, line=BORDER, radius=0.08)
+        bar(slide, x, 4.12, sw, 0.20, accent)
+        tb(slide, x, 4.145, sw, 0.18, [{"t": head, "sz": 8.2, "c": WHITE,
+                                        "b": True}], align=PP_ALIGN.CENTER)
+        tb(slide, x + 0.04, 4.40, sw - 0.08, 0.54,
+           [{"t": body, "sz": 7.8, "c": MUTED, "ls": 0.95}], align=PP_ALIGN.CENTER)
+    tb(slide, RIGHT_X, 5.06, RIGHT_W, 0.26,
+       [{"t": "One command, or one drag-and-drop. Nothing scanned ever leaves "
+              "the machine.", "sz": 9.2, "c": INK, "b": True, "ls": 1.0}])
 
-    rule(s, x0, 4.52, span_in, BORDER, 0.75)
-    for year in (2026, 2031, 2036, 2041):
-        tx = x0 + per * (year - 2026)
-        tb(s, tx - 0.30, 4.88, 0.60, 0.22, [{"t": str(year), "sz": 7.5, "c": INK3}],
-           align=PP_ALIGN.CENTER)
-
-    verdict = box(s, 0.78, 5.14, 5.55, 0.30, fill=RED_L, line=RED, radius=0.3)
-    fill_text(verdict, [{"t": "X + Y  =  15 yrs   >   Z  =  5 yrs        "
-                              "→   this asset is already overdue", "sz": 9.5,
-                         "c": RED, "b": True}], align=PP_ALIGN.CENTER, pad=0.06)
-
-    # ---- Row B right: what the tool does -------------------------------
-    tb(s, 7.22, 3.42, 5.6, 0.28,
-       [{"t": "WHAT THE TOOL ACTUALLY DOES", "sz": 10, "c": NAVY, "b": True}])
-    steps = [
-        ("1  SEE", "every place\nencryption hides", TEAL),
-        ("2  JUDGE", "broken, weak,\nor genuinely fine", BLUE),
-        ("3  RANK", "what breaks\nyou first", AMBER),
-        ("4  FIX", "the exact NIST\nreplacement", GREEN),
-    ]
-    x = 7.22
-    for head, body, accent in steps:
-        chevron(s, x, 3.76, 1.62, 1.10, head, body, accent)
-        x += 1.42
-
-    tb(s, 7.22, 5.02, 5.6, 0.50, [
-        {"t": "One command, or one drag-and-drop.", "sz": 10, "c": INK, "b": True,
-         "sp": 2},
-        {"t": "No agent, no cluster, and nothing scanned ever leaves the machine.",
-         "sz": 9.5, "c": INK2, "ls": 1.0},
-    ])
-
-    # ---- Row C: the three mandated headings, one line each ---------------
+    # --- the three mandated sub-headings, one line each --------------------
     cols = [
-        ("Detailed explanation of the solution",
+        ("Detailed explanation of the proposed solution",
          "Eight sources — code, config, dependencies, binaries, containers, TLS, "
-         "SSH, cloud & HSM — merged into one de-duplicated inventory."),
+         "SSH, cloud & HSM — merged into one de-duplicated inventory.", TEAL),
         ("How it addresses the problem",
          "You cannot migrate what you cannot see. “We think we use RSA somewhere” "
-         "becomes 191 named assets, each with an exact location."),
-        ("Innovation and uniqueness",
+         "becomes 191 named assets, each with an exact location.", BLUE),
+        ("Innovation and uniqueness of the solution",
          "Mosca made continuous, not yes/no. We refuse to cry wolf — AES-256 stays "
-         "green. And every finding is re-proved from disk."),
+         "green. Every finding is re-proved from disk.", GREEN),
     ]
-    x = 0.45
-    for head, body in cols:
-        c = box(s, x, 5.68, 4.03, 1.18, fill=WHITE, line=BORDER, radius=0.05)
-        rule(s, x, 5.68, 4.03, TEAL, 2.5)
-        tb(s, x + 0.18, 5.84, 3.7, 0.24,
-           [{"t": head, "sz": 9.5, "c": TEAL, "b": True}])
-        tb(s, x + 0.18, 6.14, 3.68, 0.66,
-           [{"t": body, "sz": 9, "c": INK2, "ls": 1.02}])
-        x += 4.21
+    for i, (head, body, accent) in enumerate(cols):
+        x = COL3[i]
+        card(slide, x, 5.54, W3, 1.26, accent)
+        tb(slide, x + 0.18, 5.64, W3 - 0.30, 0.22,
+           [{"t": head, "sz": 9.2, "c": accent, "b": True}])
+        tb(slide, x + 0.18, 5.90, W3 - 0.32, 0.82,
+           [{"t": body, "sz": 8.6, "c": MUTED, "ls": 1.06}])
 
 
-# ================================================================ SLIDE 3
-def slide_technical(prs):
-    s = blank(prs)
-    chrome(prs, s, 3, "TECHNICAL APPROACH",
-           "Pure static analysis plus read-only probes. No agent, no GPU, no cluster.")
+# ======================================================= SLIDE 3 : technical
+def slide3(slide):
+    keep_furniture(slide)
+    set_title(slide, "TECHNICAL APPROACH")
 
-    # ---- the eight sources ------------------------------------------------
-    tb(s, 0.45, 1.24, 8.0, 0.28,
-       [{"t": "WHERE ENCRYPTION HIDES — eight sources, one inventory", "sz": 10.5,
-         "c": NAVY, "b": True}])
-    sources = [
-        ("CODE", "Python AST\n+ 6 languages", TEAL),
-        ("CONFIG", "SSH · IPsec\nnginx · VPN", TEAL),
-        ("DEPS", "manifests +\nlibrary KB", BLUE),
-        ("BINARIES", "ELF · PE\nMach-O", BLUE),
-        ("CONTAINERS", "layers +\nbaked-in keys", NAVY),
-        ("TLS", "live\nhandshake", AMBER),
-        ("SSH", "live offered\nalgorithms", AMBER),
-        ("CLOUD & HSM", "AWS · Azure\nGCP · PKCS#11", RED),
-    ]
-    x, tile_w = 0.45, 1.50
-    for head, body, accent in sources:
-        t = box(s, x, 1.58, tile_w, 0.92, fill=WHITE, line=BORDER, radius=0.07)
-        rule(s, x, 1.58, tile_w, accent, 2.5)
-        fill_text(t, [
-            {"t": head, "sz": 9, "c": accent, "b": True, "sp": 2, "ls": 0.9},
-            {"t": body, "sz": 7.5, "c": INK2, "ls": 0.92},
-        ], align=PP_ALIGN.CENTER, pad=0.04)
-        x += tile_w + 0.06
+    section(slide, 1.16,
+            "Technologies to be used (e.g. programming languages, frameworks, "
+            "hardware)")
 
-    # ---- pipeline ---------------------------------------------------------
-    tb(s, 0.45, 2.66, 9.0, 0.28,
-       [{"t": "METHODOLOGY — six stages, and one failure never stops the run",
-         "sz": 10.5, "c": NAVY, "b": True}])
-    stages = [
-        ("1  INGEST", "zip or repo URL,\nsandboxed at the edge"),
-        ("2  SCAN", "eight scanners,\nindependently"),
-        ("3  MERGE", "209 raw findings\n→ 191 real assets"),
-        ("4  ASSESS", "Shor · classical\n· NIST IR 8547"),
-        ("5  RANK", "Mosca × business\ncriticality"),
-        ("6  DELIVER", "dashboard · CBOM\n· board PDF"),
-    ]
-    x = 0.45
-    for i, (head, body) in enumerate(stages):
-        accent = [TEAL, TEAL, BLUE, BLUE, AMBER, GREEN][i]
-        chevron(s, x, 3.00, 2.18, 0.92, head, body, accent)
-        x += 2.02
+    sources = [("CODE", "Python AST\n+ 6 languages", TEAL),
+               ("CONFIG", "SSH · IPsec\nnginx · VPN", TEAL),
+               ("DEPS", "manifests +\nlibrary KB", BLUE),
+               ("BINARIES", "ELF · PE\nMach-O", BLUE),
+               ("CONTAINERS", "layers +\nbaked-in keys", NAVY),
+               ("TLS", "live\nhandshake", AMBER),
+               ("SSH", "live offered\nalgorithms", AMBER),
+               ("CLOUD & HSM", "AWS · Azure · GCP\nPKCS#11", RED)]
+    tw = (CW - 7 * 0.07) / 8
+    for i, (head, body, accent) in enumerate(sources):
+        x = M + i * (tw + 0.07)
+        t = tile(slide, x, 1.50, tw, 0.70, accent)
+        text_into(t, [
+            {"t": head, "sz": 8.2, "c": accent, "b": True, "sp": 2, "ls": 0.9},
+            {"t": body, "sz": 7.5, "c": MUTED, "ls": 0.92},
+        ], align=PP_ALIGN.CENTER, pad=0.03)
 
-    # ---- technologies -----------------------------------------------------
-    tb(s, 0.45, 4.12, 6.4, 0.28,
-       [{"t": "TECHNOLOGIES USED", "sz": 10.5, "c": NAVY, "b": True}])
-    groups = [
-        ("Core", ["Python 3.11", "FastAPI", "Uvicorn", "SQLite → Postgres"], TEAL),
-        ("Detection", ["ast", "LIEF", "Syft", "TLS / SSH sockets", "boto3", "azure",
-                       "gcp", "PKCS#11"], BLUE),
-        ("Output & QA", ["CycloneDX 1.7", "ReportLab", "pytest x262", "Playwright"],
-         GREEN),
-    ]
-    x_start, x_limit = 1.42, 6.85
-    y = 4.46
-    for label, items, accent in groups:
-        tb(s, 0.45, y + 0.04, 1.0, 0.24, [{"t": label, "sz": 9, "c": INK3, "b": True}])
-        x = x_start
-        for item in items:
-            w = 0.20 + 0.075 * len(item)
-            if x + w > x_limit:            # wrap rather than run off the column
-                y += 0.38
-                x = x_start
-            chip(s, x, y, w, 0.30, item,
-                 fill={TEAL: TEAL_L, BLUE: BLUE_L, GREEN: GREEN_L}[accent], fg=accent)
-            x += w + 0.09
-        y += 0.42
+    rows = [("Core", "Python 3.11  ·  FastAPI  ·  Uvicorn  ·  SQLite documents → "
+                     "Postgres + JSONB by connection string", TEAL),
+            ("Output & QA", "CycloneDX 1.7 / ECMA-424 2nd Ed.  ·  ReportLab board "
+                            "PDF  ·  zero-build HTML dashboard  ·  pytest ×262  ·  "
+                            "Playwright UI tests", GREEN)]
+    for i, (label, value, accent) in enumerate(rows):
+        y = 2.26 + i * 0.42
+        lp = box(slide, M, y, 1.62, 0.38, fill=accent, line=None, radius=0.14)
+        text_into(lp, [{"t": label, "sz": 8.2, "c": WHITE, "b": True}],
+                  align=PP_ALIGN.CENTER, pad=0.04)
+        vp = box(slide, 2.00, y, 11.03, 0.38, fill=PANEL, line=BORDER, radius=0.14)
+        text_into(vp, [{"t": value, "sz": 8.2, "c": INK}], pad=0.14)
 
-    # ---- proof shots ------------------------------------------------------
-    shot(s, "graph.png", 7.05, 4.42, 2.88,
-         "Asset graph - blast radius. All 191 assets stay represented.")
-    shot(s, "inventory.png", 10.00, 4.42, 2.88,
-         "Inventory - every asset traceable to an exact file and line.")
+    tb(slide, M, 3.08, CW, 0.22,
+       [{"t": "Hardware: none. Runs offline on a laptop — no GPU, no cluster, no "
+              "agent, no external service; a full 191-asset scan takes about a "
+              "second.", "sz": 8.2, "c": MUTED}])
 
-    strip = box(s, 0.45, 6.46, 12.43, 0.44, fill=PANEL, line=BORDER, radius=0.05)
-    fill_text(strip, [{"t": "Hardware required: none.  A full 191-asset scan "
-                            "finishes in about a second on a laptop - no GPU, no "
-                            "cluster, and nothing scanned ever leaves the machine.",
-                       "sz": 9.5, "c": INK, "b": True}],
-              align=PP_ALIGN.CENTER, pad=0.15)
+    section(slide, 3.34, "Methodology and process for implementation "
+                         "(Flow Charts/Images/ working prototype)")
+
+    stages = [("1  INGEST", "zip upload or repo URL — traversal, zip-bomb, "
+                            "symlink and SSRF gated at the edge", TEAL),
+              ("2  SCAN", "eight scanners run independently; one failure "
+                          "degrades that source, never the run", TEAL),
+              ("3  MERGE", "cross-source identity merge — 209 raw findings "
+                           "become 191 real assets", BLUE),
+              ("4  ASSESS", "Shor-broken / classically broken / deprecated, plus "
+                            "NIST IR 8547 and CNSA 2.0", BLUE),
+              ("5  RANK", "risk = vulnerability × timing × HNDL, weighted by "
+                          "business criticality", AMBER),
+              ("6  DELIVER", "dashboard, CycloneDX 1.7 CBOM, board PDF, drift "
+                             "diff between two scans", GREEN)]
+    for i, (head, body, accent) in enumerate(stages):
+        x = COL6[i]
+        box(slide, x, 3.68, W6, 0.88, fill=PANEL, line=BORDER, radius=0.08)
+        bar(slide, x, 3.68, W6, 0.24, accent)
+        tb(slide, x, 3.705, W6, 0.21,
+           [{"t": head, "sz": 8.2, "c": WHITE, "b": True}], align=PP_ALIGN.CENTER)
+        tb(slide, x + 0.06, 3.98, W6 - 0.12, 0.54,
+           [{"t": body, "sz": 7.5, "c": MUTED, "ls": 0.95}])
+        if i < 5:
+            tb(slide, x + W6 + 0.005, 4.03, 0.12, 0.20,
+               [{"t": "›", "sz": 11, "c": BORDER, "b": True}], align=PP_ALIGN.CENTER)
+
+    shot(slide, "graph.png", LEFT_X, 4.64, LEFT_W)
+    caption(slide, LEFT_X, 6.60, LEFT_W,
+            "Asset graph — blast radius. 125 nodes, 117 low-priority assets "
+            "clustered so all 191 stay represented, never truncated.")
+    shot(slide, "inventory.png", RIGHT_X, 4.64, RIGHT_W)
+    caption(slide, RIGHT_X, 6.60, RIGHT_W,
+            "Inventory explorer — every asset traceable to its source, its "
+            "confidence band and an exact file:line for evidence.")
 
 
-# ================================================================ SLIDE 4
-def slide_feasibility(prs):
-    s = blank(prs)
-    chrome(prs, s, 4, "FEASIBILITY AND VIABILITY",
-           "Feasible because it is already built, and every number below is measured.")
+# ===================================================== SLIDE 4 : feasibility
+def slide4(slide):
+    keep_furniture(slide)
+    set_title(slide, "FEASIBILITY AND VIABILITY")
 
-    tb(s, 0.45, 1.24, 7.4, 0.28,
-       [{"t": "ANALYSIS OF FEASIBILITY — measured, not estimated", "sz": 10.5,
-         "c": NAVY, "b": True}])
+    section(slide, 1.16, "Analysis of the feasibility of the idea")
 
-    stats = [
-        ("262", "tests green", TEAL),
-        ("100%", "precision", GREEN),
-        ("97.5%", "recall", GREEN),
-        ("7", "languages", BLUE),
-        ("8", "source types", BLUE),
-        ("0", "hard dependencies", NAVY),
-    ]
-    x, y = 0.45, 1.58
+    stats = [("262", "tests green, incl. browser UI tests", TEAL),
+             ("100% / 97.5%", "precision / recall, 91-usage corpus", GREEN),
+             ("7", "languages, Python through Rust", BLUE),
+             ("8", "source types, code to PKCS#11", BLUE),
+             ("0", "hard dependencies, runs offline", NAVY),
+             ("1.7", "CycloneDX / ECMA-424, validated", TEAL)]
     for i, (value, label, accent) in enumerate(stats):
-        if i == 3:
-            x, y = 0.45, 2.42
-        t = box(s, x, y, 2.38, 0.74, fill=WHITE, line=BORDER, radius=0.07)
-        rule(s, x, y, 2.38, accent, 2.5)
-        fill_text(t, [
-            {"t": value, "sz": 20, "c": accent, "b": True, "sp": 0, "ls": 0.82},
-            {"t": label, "sz": 8.5, "c": INK2, "ls": 0.9},
-        ], align=PP_ALIGN.CENTER, pad=0.04)
-        x += 2.46
+        x = COL6[i]
+        t = tile(slide, x, 1.54, W6, 0.94, accent)
+        text_into(t, [
+            {"t": value, "sz": 17 if len(value) < 6 else 12, "c": accent,
+             "b": True, "sp": 3, "ls": 0.82},
+            {"t": label, "sz": 7.8, "c": MUTED, "ls": 0.98},
+        ], align=PP_ALIGN.CENTER, pad=0.05)
 
-    tb(s, 0.45, 3.26, 7.3, 0.28,
-       [{"t": "Every figure comes from pytest, the accuracy evaluator and a live "
-              "scan on this machine.", "sz": 9.5, "c": INK2}])
+    tb(slide, M, 2.58, CW, 0.24,
+       [{"t": "Feasible because it is already built and measured. Every number "
+              "above comes from pytest, the accuracy evaluator and a live scan on "
+              "this machine — none of it is an estimate.", "sz": 8.6, "c": INK}])
 
-    shot(s, "overview_kpi.png", 0.45, 3.58, 6.85,
-         "A real scan of the demo estate: 191 assets across all eight sources, "
-         "scored and ranked - the numbers above are this run.")
+    section(slide, 2.90, "Potential challenges and risks", x=LEFT_X, w=LEFT_W)
+    section(slide, 2.90, "Strategies for overcoming these challenges",
+            x=RIGHT_X, w=RIGHT_W)
 
-    # ---- risks ------------------------------------------------------------
-    tb(s, 8.00, 1.24, 4.9, 0.28,
-       [{"t": "RISKS  →  HOW WE HANDLE THEM", "sz": 10.5, "c": NAVY, "b": True}])
-    risks = [
+    pairs = [
         ("Static analysis cannot see runtime-chosen algorithms",
-         "Every finding carries a confidence band, and our 2 known misses are "
-         "published in the corpus as misses."),
-        ("Q-Day is genuinely unknowable",
-         "Z is a visible dial, never a constant — and the fixed NIST 2030/2035 "
-         "deadline is scored beside it."),
-        ("Business context is not in the code",
-         "Data lifetime and criticality come from a reviewed policy file. Anything "
-         "defaulted is badged “assumed”."),
-        ("Our own output is an attacker’s shopping list",
-         "Read-only connectors, allowlisted probing, role-gated settings, audit-logged "
-         "exports, keys stored as fingerprints."),
+         "Algorithm names read from the environment, or resolved through "
+         "getattr, are invisible to any scanner.",
+         "Confidence banding + independent ground truth",
+         "Every finding carries a confidence level, and our 2 known misses are "
+         "published in the corpus as misses, not hidden."),
+        ("Q-Day (Z) is genuinely unknowable",
+         "Hardcode a date and every score inherits one team’s guess — easy for a "
+         "sceptical auditor to dismiss.",
+         "Score the certain clock alongside the uncertain one",
+         "Z is a visible dial, never a constant, and the fixed NIST IR 8547 date "
+         "is scored beside it."),
+        ("Business context cannot be read out of code",
+         "No parser knows that a given AES call protects 25-year defence records. "
+         "Guessing silently produces confident, wrong numbers.",
+         "Human inputs, declared as human inputs",
+         "Lifetime and criticality come from a reviewed crypto-policy.yaml; "
+         "anything defaulted is stored and badged “assumed”."),
+        ("The tool’s own output is a weapon",
+         "A ranked list of an organisation’s weakest cryptography is an "
+         "attacker’s shopping list, pre-sorted.",
+         "A security model for the scanner itself",
+         "Read-only connectors (never Decrypt, never Sign) · allowlisted probing, "
+         "refused not warned · role-gated settings · audit-logged exports."),
     ]
-    y = 1.58
-    for head, body in risks:
-        card = box(s, 8.00, y, 4.88, 1.10, fill=WHITE, line=BORDER, radius=0.05)
-        vrule(s, 8.00, y, 1.10, AMBER, 2.5)
-        tb(s, 8.20, y + 0.14, 4.5, 0.28,
-           [{"t": head, "sz": 9.5, "c": INK, "b": True, "ls": 1.0}])
-        tb(s, 8.20, y + 0.44, 4.5, 0.58,
-           [{"t": body, "sz": 8.5, "c": INK2, "ls": 1.02}])
-        y += 1.16
+    y = 3.26
+    for lh, lb, rh, rb in pairs:
+        card(slide, LEFT_X, y, LEFT_W, 0.86, AMBER)
+        tb(slide, LEFT_X + 0.18, y + 0.08, LEFT_W - 0.30, 0.20,
+           [{"t": lh, "sz": 8.6, "c": INK, "b": True}])
+        tb(slide, LEFT_X + 0.18, y + 0.31, LEFT_W - 0.32, 0.50,
+           [{"t": lb, "sz": 7.8, "c": MUTED, "ls": 1.02}])
+        card(slide, RIGHT_X, y, RIGHT_W, 0.86, TEAL)
+        tb(slide, RIGHT_X + 0.18, y + 0.08, RIGHT_W - 0.30, 0.20,
+           [{"t": rh, "sz": 8.6, "c": TEAL, "b": True}])
+        tb(slide, RIGHT_X + 0.18, y + 0.31, RIGHT_W - 0.32, 0.50,
+           [{"t": rb, "sz": 7.8, "c": MUTED, "ls": 1.02}])
+        tb(slide, 6.50, y + 0.30, 0.24, 0.22,
+           [{"t": "→", "sz": 11, "c": MUTED, "b": True}], align=PP_ALIGN.CENTER)
+        y += 0.92
 
-    closing = box(s, 8.00, y + 0.10, 4.88, 0.56, fill=TEAL_L, line=TEAL, radius=0.05)
-    fill_text(closing, [{"t": "The scanner is threat-modelled as a target itself, "
-                              "not just as a tool.", "sz": 9.5, "c": TEAL, "b": True}],
-              align=PP_ALIGN.CENTER, pad=0.15)
 
+# ========================================================== SLIDE 5 : impact
+def slide5(slide):
+    keep_furniture(slide)
+    set_title(slide, "IMPACT AND BENEFITS")
 
-# ================================================================ SLIDE 5
-def slide_impact(prs):
-    s = blank(prs)
-    chrome(prs, s, 5, "IMPACT AND BENEFITS",
-           "Inventory is the step every post-quantum transition has to start from.")
+    section(slide, 1.16, "Potential impact on the target audience",
+            x=LEFT_X, w=LEFT_W)
 
-    tb(s, 0.45, 1.24, 7.4, 0.28,
-       [{"t": "WHO IT HELPS, AND HOW", "sz": 10.5, "c": NAVY, "b": True}])
-    people = [
-        ("CISO / risk officer", "A ranked, defensible board report instead of a "
-                                "spreadsheet guess.", TEAL),
-        ("Security engineer", "Algorithm, key size and exact file:line, with a "
-                              "confidence band.", BLUE),
-        ("DevOps / platform", "One command. No agent, no cluster, no code leaving "
-                              "the building.", NAVY),
-        ("Compliance / audit", "A CycloneDX 1.7 CBOM is regulatory evidence. "
-                               "A screenshot is not.", GREEN),
-    ]
-    x, y = 0.45, 1.58
-    for i, (who, what, accent) in enumerate(people):
-        if i == 2:
-            x, y = 0.45, 2.62
-        card = box(s, x, y, 3.62, 0.94, fill=WHITE, line=BORDER, radius=0.05)
-        dot = box(s, x + 0.18, y + 0.20, 0.22, 0.22, fill=accent, line=None,
-                  radius=0.5, shape=MSO_SHAPE.OVAL)
-        tb(s, x + 0.50, y + 0.16, 3.0, 0.26,
-           [{"t": who, "sz": 10, "c": accent, "b": True}])
-        tb(s, x + 0.50, y + 0.44, 2.96, 0.46,
-           [{"t": what, "sz": 8.5, "c": INK2, "ls": 1.0}])
-        x += 3.78
+    people = [("CISO / risk officer",
+               "A ranked, defensible board report instead of a spreadsheet guess — "
+               "and owns the Z dial that drives it.", TEAL),
+              ("Security / crypto engineer",
+               "Algorithm, key size, library version and an exact file:line per "
+               "finding, each with a confidence band.", BLUE),
+              ("DevOps / platform team",
+               "One command or one drag-and-drop. No agent, no cluster, no code "
+               "leaving the building.", NAVY),
+              ("Compliance / audit lead",
+               "A standards-conformant CycloneDX 1.7 CBOM is regulatory evidence. "
+               "A screenshot is not.", GREEN)]
+    y = 1.54
+    for head, body, accent in people:
+        card(slide, LEFT_X, y, LEFT_W, 0.66, accent)
+        tb(slide, LEFT_X + 0.18, y + 0.07, LEFT_W - 0.30, 0.20,
+           [{"t": head, "sz": 8.6, "c": accent, "b": True}])
+        tb(slide, LEFT_X + 0.18, y + 0.29, LEFT_W - 0.32, 0.34,
+           [{"t": body, "sz": 7.8, "c": MUTED, "ls": 1.02}])
+        y += 0.71
 
-    # ---- national scale ---------------------------------------------------
-    n = box(s, 0.45, 3.70, 7.40, 0.86, fill=TEAL_L, line=TEAL, radius=0.05)
-    tb(s, 0.68, 3.84, 6.95, 0.28,
-       [{"t": "India, at national scale", "sz": 10.5, "c": TEAL, "b": True}])
-    tb(s, 0.68, 4.13, 6.95, 0.38,
+    card(slide, LEFT_X, 4.38, LEFT_W, 0.72, TEAL, fill=TEAL_L)
+    tb(slide, LEFT_X + 0.18, 4.45, LEFT_W - 0.30, 0.20,
+       [{"t": "India, at national scale", "sz": 8.6, "c": TEAL, "b": True}])
+    tb(slide, LEFT_X + 0.18, 4.67, LEFT_W - 0.32, 0.40,
        [{"t": "RBI, SEBI, UIDAI, defence and telecom all hold data whose "
               "confidentiality must outlast 2035 — and none of them can migrate "
-              "what they have never inventoried.", "sz": 9.5, "c": INK, "ls": 1.0}])
+              "what they have never inventoried.", "sz": 7.8, "c": INK,
+         "ls": 1.02}])
 
-    # ---- benefits ---------------------------------------------------------
-    tb(s, 0.45, 4.74, 7.4, 0.28,
-       [{"t": "BENEFITS", "sz": 10.5, "c": NAVY, "b": True}])
-    benefits = [
-        ("SOCIAL", "Citizen data recorded today stays private after Q-Day.", TEAL),
-        ("ECONOMIC", "Budget goes to the few assets that matter, not a blanket "
-                     "rewrite.", BLUE),
-        ("STRATEGIC", "Self-hosted. No map of India’s weak points sent to a "
-                      "foreign SaaS.", NAVY),
-        ("ENVIRONMENTAL", "A laptop, for about a second. No GPU, no always-on "
-                          "agent.", GREEN),
-    ]
-    x = 0.45
-    for head, body, accent in benefits:
-        card = box(s, x, 5.08, 1.79, 1.62, fill=PANEL, line=BORDER, radius=0.05)
-        rule(s, x, 5.08, 1.79, accent, 2.5)
-        fill_text(card, [
-            {"t": head, "sz": 8.5, "c": accent, "b": True, "sp": 5, "ls": 0.9},
-            {"t": body, "sz": 8.5, "c": INK2, "ls": 1.04},
-        ], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE, pad=0.10)
-        x += 1.87
+    shot(slide, "recs.png", RIGHT_X, 1.54, RIGHT_W)
+    caption(slide, RIGHT_X, 4.60, RIGHT_W,
+            "Recommendations — every broken asset gets a named NIST replacement, "
+            "ranked by risk, latency and rotation cost.")
+    card(slide, RIGHT_X, 4.86, RIGHT_W, 0.52, TEAL, fill=TEAL_L)
+    tb(slide, RIGHT_X + 0.19, 4.95, RIGHT_W - 0.32, 0.36,
+       [{"t": "In plain English: it does not just say “this lock is weak”. It says "
+              "replace this exact lock, with this exact model, before this date.",
+         "sz": 8.2, "c": INK, "ls": 1.02}])
 
-    shot(s, "recs.png", 8.00, 1.58, 4.88,
-         "Recommendations — every broken asset gets a named NIST replacement, "
-         "ranked by risk, latency and rotation cost.")
-    tb(s, 8.00, 5.86, 4.88, 0.94, [
-        {"t": "In plain English", "sz": 10, "c": TEAL, "b": True, "sp": 3},
-        {"t": "It does not just say “this lock is weak”. It says replace this exact "
-              "lock, with this exact model, before this date — and puts the ones "
-              "that matter most at the top.", "sz": 9.5, "c": INK, "ls": 1.04},
-    ])
+    section(slide, 5.52, "Benefits of the solution (social, economic, "
+                         "environmental, etc.)")
+
+    benefits = [("SOCIAL", "Citizen data recorded today — Aadhaar-linked, health, "
+                           "financial — stays private after Q-Day.", TEAL),
+                ("ECONOMIC", "Budget goes to the assets that matter instead of a "
+                             "blanket rewrite. Weeks of consultancy become one "
+                             "command.", BLUE),
+                ("STRATEGIC", "Open and self-hosted. No Indian organisation hands "
+                              "a map of its weak points to a foreign SaaS vendor.",
+                 NAVY),
+                ("ENVIRONMENTAL", "Static analysis on a laptop. No GPU, no "
+                                  "always-on agent, no cluster.", GREEN)]
+    for i, (head, body, accent) in enumerate(benefits):
+        x = COL4[i]
+        box(slide, x, 5.90, W4, 0.93, fill=PANEL, line=BORDER, radius=0.08)
+        bar(slide, x, 5.90, W4, 0.21, accent)
+        tb(slide, x, 5.925, W4, 0.19, [{"t": head, "sz": 8.2, "c": WHITE,
+                                        "b": True}], align=PP_ALIGN.CENTER)
+        tb(slide, x + 0.13, 6.19, W4 - 0.26, 0.60,
+           [{"t": body, "sz": 7.8, "c": MUTED, "ls": 1.02}], align=PP_ALIGN.CENTER)
 
 
-# ================================================================ SLIDE 6
-def slide_research(prs):
-    s = blank(prs)
-    chrome(prs, s, 6, "RESEARCH AND REFERENCES",
-           "What we implement, what we measured ourselves, and what changed the design.")
+# ======================================================== SLIDE 6 : research
+def slide6(slide):
+    keep_furniture(slide)
+    set_title(slide, "RESEARCH AND REFERENCES")
+
+    section(slide, 1.16, "Details / Links of the reference and research work")
 
     cards = [
-        ("STANDARDS WE IMPLEMENT", TEAL, [
-            ("NIST IR 8547 (ipd)", "RSA and ECC deprecated after 2030, disallowed "
-                                   "after 2035 — the second, certain clock."),
-            ("FIPS 203 / 204 / 205 / 206", "ML-KEM, ML-DSA, SLH-DSA, FN-DSA — the "
-                                           "replacements we name per asset."),
-            ("NIST SP 800-208", "LMS / XMSS for firmware and code signing."),
-            ("NSA CNSA 2.0", "Source of our AES-256 / SHA-384 policy flags — raised "
-                             "as policy, never as a break."),
+        ("Standards we implement", TEAL, [
+            ("NIST IR 8547 (ipd)",
+             "RSA and ECC deprecated after 2030, disallowed after 2035 — the "
+             "second, certain clock we score alongside Q-Day."),
+            ("FIPS 203 / 204 / 205 / 206 (ipd)",
+             "ML-KEM, ML-DSA, SLH-DSA, FN-DSA — the replacements we name per "
+             "asset. FIPS 206 carries a maturity badge, never a default."),
+            ("NIST SP 800-208  ·  NSA CNSA 2.0",
+             "LMS / XMSS for firmware signing; CNSA is the source of our AES-256 "
+             "and SHA-384 flags, raised as policy, never as a break."),
         ]),
-        ("FORMATS AND PRIOR ART", BLUE, [
-            ("CycloneDX 1.7 / ECMA-424 2nd Ed.", "Ratified Dec 2025. Our CBOM output "
-                                                 "format, validated on every scan."),
-            ("CycloneDX Cryptography Registry", "Algorithm-name normalisation, so our "
-                                                "output is comparable with other vendors’."),
-            ("IBM CBOM", "github.com/IBM/CBOM — the closest prior art, and the "
-                         "baseline we measured our output shape against."),
+        ("Formats and prior art", BLUE, [
+            ("CycloneDX 1.7, ratified ECMA-424 2nd Ed. (Dec 2025)",
+             "cyclonedx.org/capabilities/cbom  ·  our CBOM output format, "
+             "validated on every single scan."),
+            ("CycloneDX Cryptography Registry",
+             "Algorithm-name normalisation, so our output is directly comparable "
+             "with other vendors’ CBOMs instead of using private names."),
+            ("IBM CBOM  ·  github.com/IBM/CBOM",
+             "The closest prior art to this problem statement, and the baseline "
+             "we measured our own output shape against."),
         ]),
-        ("METHOD AND THEORY", NAVY, [
-            ("M. Mosca", "The X + Y > Z inequality — the backbone of our priority score."),
-            ("P. Shor (1994)", "Why RSA, DSA, DH, ECDSA and ECDH break outright rather "
-                               "than weaken: no key size fixes it."),
-            ("Grover (1996) · Brassard–Høyer–Tapp", "And why they matter far less than "
-                                                    "the headlines claim — this reading "
-                                                    "is why we classify AES-128 and "
-                                                    "SHA-256 as adequate."),
-        ]),
-        ("OUR OWN RESEARCH — NOT JUST CITATIONS", GREEN, [
-            ("corpus/ — ground truth we built", "91 usages hand-labelled from source "
-                                                "across 7 languages, plus 7 negative "
-                                                "controls. Building it found 7 real bugs "
-                                                "in our own scanner."),
-            ("Measured, not asserted", "100% precision / 97.5% recall; strict 98.9% / "
-                                       "96.7%. A regression fails CI instead of shipping."),
-            ("Research that changed the design", "A real scan of paramiko scored an "
-                                                 "already-migrated ML-KEM exchange at "
-                                                 "0.60 — that one finding rewrote the "
-                                                 "priority formula."),
+        ("Method and theory", NAVY, [
+            ("M. Mosca — will we be ready?",
+             "The X + Y > Z inequality is the backbone of our priority score."),
+            ("P. Shor (1994)",
+             "Why RSA, DSA, DH, ECDSA and ECDH break outright rather than merely "
+             "weaken: there is no key-size fix, the mathematics is gone."),
+            ("L. Grover (1996)  ·  Brassard–Høyer–Tapp",
+             "And why they matter far less than the headlines claim. This reading "
+             "is why we classify AES-128 and SHA-256 as adequate."),
         ]),
     ]
-
-    x, y = 0.45, 1.26
     for i, (title, accent, rows) in enumerate(cards):
-        if i == 2:
-            x, y = 0.45, 4.06
-        card = box(s, x, y, 6.20, 2.62, fill=WHITE, line=BORDER, radius=0.04)
-        rule(s, x, y, 6.20, accent, 2.5)
-        tb(s, x + 0.22, y + 0.15, 5.8, 0.26,
-           [{"t": title, "sz": 10, "c": accent, "b": True}])
-        ry = y + 0.46
-        pitch = (2.62 - 0.56) / len(rows)
+        x = COL3[i]
+        box(slide, x, 1.54, W3, 2.62, fill=WHITE, line=BORDER, radius=0.05)
+        header = box(slide, x, 1.54, W3, 0.30, fill=accent, line=None, radius=0.40)
+        text_into(header, [{"t": title, "sz": 9.2, "c": WHITE, "b": True}],
+                  pad=0.12)
+        ry = 1.94
         for head, body in rows:
-            tb(s, x + 0.22, ry, 5.76, 0.22, [{"t": head, "sz": 9, "c": INK, "b": True}])
-            tb(s, x + 0.22, ry + 0.21, 5.76, pitch - 0.24,
-               [{"t": body, "sz": 8.5, "c": INK2, "ls": 1.0}])
-            ry += pitch
-        x += 6.43
+            tb(slide, x + 0.17, ry, W3 - 0.30, 0.20,
+               [{"t": head, "sz": 8.2, "c": INK, "b": True, "ls": 1.0}])
+            tb(slide, x + 0.17, ry + 0.21, W3 - 0.32, 0.50,
+               [{"t": body, "sz": 7.5, "c": MUTED, "ls": 1.02}])
+            ry += 0.74
 
-    tb(s, 0.45, 6.78, 12.0, 0.24,
-       [{"t": "Full specification and design record: docs/cbom-compass-prd.md   ·   "
-              "scanner accuracy notes: corpus/README.md   ·   architecture, security "
-              "model and stated limits: README.md", "sz": 8, "c": INK3}])
+    # --- our own research, full width -------------------------------------
+    box(slide, M, 4.30, CW, 2.28, fill=PANEL, line=BORDER, radius=0.05)
+    header = box(slide, M, 4.30, CW, 0.30, fill=GREEN, line=None, radius=0.40)
+    text_into(header, [{"t": "Our own research — not just citations", "sz": 9.2,
+                        "c": WHITE, "b": True}], pad=0.14)
+
+    own = [("corpus/ — a labelled ground truth we built",
+            "91 cryptographic usages hand-labelled from source across 7 languages, "
+            "plus 7 negative controls that discuss cryptography while performing "
+            "none. Building it surfaced 7 real bugs in our own scanner."),
+           ("Measured, not asserted  ·  cbom-compass eval",
+            "Algorithm level 100% precision / 97.5% recall; strict — key size, "
+            "mode and curve — 98.9% / 96.7%. Zero findings on the negative "
+            "controls, and a regression fails CI instead of shipping quietly."),
+           ("Proof the findings are real  ·  cbom-compass verify",
+            "Re-opens each artefact on disk and re-checks the claim by a "
+            "deliberately different technique, quoting the line. The tests plant "
+            "fabricated findings and assert every one is rejected.")]
+    for i, (head, body) in enumerate(own):
+        x = 0.46 + i * 4.23
+        tb(slide, x, 4.70, 4.05, 0.20,
+           [{"t": head, "sz": 8.2, "c": GREEN, "b": True}])
+        tb(slide, x, 4.92, 4.05, 0.80,
+           [{"t": body, "sz": 7.5, "c": MUTED, "ls": 1.04}])
+
+    bar(slide, 0.46, 5.82, 12.41, 0.01, BORDER)
+    tb(slide, 0.46, 5.90, 12.41, 0.56,
+       [{"t": "Research that changed the design.  Our PRD v1.0 targeted CycloneDX "
+              "1.6; reading the ECMA-424 2nd Edition ratification moved us to 1.7, "
+              "where nistQuantumSecurityLevel is a native field rather than a "
+              "vendor extension. A scan of real third-party code (paramiko) scored "
+              "an already-migrated ML-KEM key exchange at 0.60 — that single "
+              "finding rewrote the priority formula from a flat max() across peer "
+              "axes to vulnerability × timing.", "sz": 7.8, "c": INK, "ls": 1.04}])
+
+    tb(slide, M, 6.66, CW, 0.20,
+       [{"t": "Full specification and design record: docs/cbom-compass-prd.md  ·  "
+              "scanner accuracy notes: corpus/README.md  ·  architecture, security "
+              "model and stated limits: README.md", "sz": 7.5, "c": MUTED}])
 
 
 def main():
-    prs = new_deck()
-    slide_title(prs)
-    slide_idea(prs)
-    slide_technical(prs)
-    slide_feasibility(prs)
-    slide_impact(prs)
-    slide_research(prs)
+    prs = Presentation(TEMPLATE)
+    for build, slide in zip((slide1, slide2, slide3, slide4, slide5, slide6),
+                            prs.slides):
+        build(slide)
     prs.save(OUT)
-    print(f"wrote {OUT}  ({OUT.stat().st_size / 1024 / 1024:.1f} MB, "
-          f"{len(prs.slides.__iter__.__self__._sldIdLst)} slides)")
+    print(f"wrote {OUT}  ({OUT.stat().st_size / 1024 / 1024:.1f} MB)")
 
 
 main()

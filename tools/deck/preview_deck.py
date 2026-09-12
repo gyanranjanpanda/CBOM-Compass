@@ -199,9 +199,16 @@ def render(slide, index):
         w, h = max(1, px(sh.width)), max(1, px(sh.height))
         if sh.shape_type == MSO_SHAPE_TYPE.PICTURE:
             try:
-                im = Image.open(sh.image.blob and __import__("io").BytesIO(sh.image.blob))
-                img.paste(im.convert("RGB").resize((w, h), Image.LANCZOS), (x, y))
-            except Exception as exc:
+                import io
+                im = Image.open(io.BytesIO(sh.image.blob)).convert("RGBA")
+                im = im.resize((w, h), Image.LANCZOS)
+                # Flattening alpha to black makes a transparent logo look like a
+                # solid slab, which is exactly the kind of false alarm that sends
+                # you chasing a layout bug that is not there.
+                plate = Image.new("RGBA", (w, h), (255, 255, 255, 0))
+                plate.alpha_composite(im)
+                img.paste(plate.convert("RGB"), (x, y), plate)
+            except Exception:
                 drw.rectangle([x, y, x + w, y + h], outline=(200, 0, 0))
             continue
         if sh.shape_type == MSO_SHAPE_TYPE.TEXT_BOX:
