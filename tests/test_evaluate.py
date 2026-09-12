@@ -33,13 +33,59 @@ def test_negative_controls_produce_nothing():
     assert ev.negative_controls >= 4
 
 
-def test_every_remaining_miss_is_a_documented_dynamic_case():
-    """Recall is below 100% only because of cases we have labelled as
-    unresolvable by static analysis. If a miss appears outside hard_dynamic.py,
-    it is a regression, not a known limit."""
+# Corpus files that hold cases we have not built the analysis for yet. Every
+# miss must live in one of these; a miss anywhere else is a regression, not a
+# known limit.
+HARD_CASE_FILES = ("hard_dataflow",)
+
+
+def test_every_remaining_miss_is_a_documented_hard_case():
     ev = evaluate()
     for key, _ in ev.algorithm.false_negatives:
-        assert "hard_dynamic" in key.path, f"unexpected miss: {key.path} {key.render()}"
+        assert any(h in key.path for h in HARD_CASE_FILES), \
+            f"unexpected miss: {key.path} {key.render()}"
+
+
+def test_constant_folding_resolves_the_cases_it_claims_to():
+    """`hard_dynamic.py` used to be misses end to end.
+
+    Module-level constant folding closed all of them — an algorithm named by a
+    module constant, a key size behind an environment default, and `getattr`
+    with a literal attribute. Locking that in here means the capability cannot
+    quietly regress into "documented limitation" again.
+    """
+    ev = evaluate()
+    stale = [k.render() for k, _ in ev.algorithm.false_negatives
+             if "hard_dynamic" in k.path]
+    assert stale == [], f"constant folding regressed: {stale}"
+
+
+def test_resolved_values_declare_where_they_came_from():
+    """An environment default is a real finding, but a conditional one.
+
+    It is what runs unless the deployment overrides it, so it is reported at
+    medium confidence and the evidence says so. Asserting the note here keeps
+    the honesty from being a comment nobody checks.
+    """
+    from cbom_compass.models import Confidence
+    from cbom_compass.scanners.source import SourceScanner
+
+    assets = SourceScanner().scan("corpus/python/hard_dynamic.py").assets
+    by_algorithm = {a.algorithm: a for a in assets}
+
+    md5 = by_algorithm["MD5"]
+    assert md5.confidence is Confidence.MEDIUM
+    assert "environment variable" in md5.evidence[0].detail["resolved_from"]
+
+    rsa = by_algorithm["RSA"]
+    assert rsa.key_size == 1024
+    assert "environment variable" in rsa.evidence[0].detail["key_size_resolved_from"]
+
+    # `getattr(hashlib, "sha1")` is indirection in spelling only — the attribute
+    # is a literal, so it is exactly as certain as writing hashlib.sha1.
+    sha1 = by_algorithm["SHA-1"]
+    assert sha1.confidence is Confidence.HIGH
+    assert "getattr" in sha1.evidence[0].detail["resolved_from"]
 
 
 # Which corpus directory holds the ground truth for each rule family. Adding a

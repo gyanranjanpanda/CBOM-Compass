@@ -23,15 +23,28 @@ labels.yaml          ground truth
 python/ java/ js/ go/   fixture sources
 ```
 
-Four of the eleven files are **negative controls**: they mention MD5, RSA, DES and AES in comments,
-string literals, constant names and identifiers, and perform no cryptography at all. They exist
-because that is precisely what makes a naive keyword matcher look good and be useless. Any finding
-in those files is a false positive.
+Seven files are **negative controls**: they mention MD5, RSA, DES and AES in comments, string
+literals, constant names and identifiers, and perform no cryptography at all. They exist because that
+is precisely what makes a naive keyword matcher look good and be useless. Any finding in those files
+is a false positive.
 
-`python/hard_dynamic.py` holds cases static analysis genuinely cannot resolve — algorithm names read
-from the environment, key sizes from variables, `getattr(hashlib, ...)` indirection. They are
-labelled as expected findings and counted as misses. Excluding them would inflate recall by hiding
-the limitation instead of measuring it.
+Two files hold the hard cases, and the split between them is deliberate.
+
+`python/hard_dynamic.py` holds what the scanner **can** now resolve: a name bound once at module
+scope to a literal, or to the *default* of an environment lookup, and `getattr` with a literal
+attribute. These used to be misses end to end; module-level constant folding closed them. A source
+literal is reported at high confidence — it is as certain as writing the value at the call site. An
+environment default is reported at medium, because it is what runs unless the deployment overrides
+it, and the evidence says so rather than presenting a conditional value as a fact.
+
+`python/hard_dataflow.py` holds what it **still cannot**: a binding inside a function, a value that
+differs by branch, and an algorithm arriving as a function argument. Each needs a different analysis
+we have not built — intra-procedural dataflow, path sensitivity, and cross-procedural analysis
+respectively. They are labelled as expected findings and counted as misses.
+
+Keeping that second file is the point. Closing `hard_dynamic.py` took both metric sets to 100%, and
+a corpus the scanner passes completely has stopped measuring anything. The useful corpus always
+contains the next thing that does not work yet.
 
 ## The two metric sets
 

@@ -246,6 +246,69 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+DEMO_APP = "samples/vulnerable-app"
+DEMO_POLICY = f"{DEMO_APP}/crypto-policy.yaml"
+
+
+def cmd_demo(args: argparse.Namespace) -> int:
+    """Seed a deterministic scan of the bundled sample estate, then serve it.
+
+    Built because the alternative is scanning something live in front of an
+    audience. Cloning a repository on stage depends on the venue's wifi, and a
+    dashboard that opens on whatever happens to be in the database invites the
+    question "is this real or canned?" at the worst possible moment.
+
+    Everything here is offline and repeatable: the sample application, its
+    deployment configuration, the container tree and two key-store exports that
+    stand in for cloud KMS and a PKCS#11 HSM. Two scans are stored, so the drift
+    view has a real diff rather than an empty state.
+    """
+    policy_path = args.policy or DEMO_POLICY
+    if not Path(DEMO_APP).is_dir():
+        print(f"{RED}{DEMO_APP} not found — run this from the repository root{RST}",
+              file=sys.stderr)
+        return 2
+
+    store = Store(args.db)
+    if args.reset:
+        for suffix in ("", "-wal", "-shm"):
+            Path(str(args.db) + suffix).unlink(missing_ok=True)
+        store = Store(args.db)
+
+    policy = Policy.load(policy_path)
+
+    print(f"{BOLD}Seeding the demo estate{RST} {DIM}(offline, no network){RST}")
+    first = run_scan({"source": [DEMO_APP], "dependencies": [DEMO_APP]}, policy,
+                     initiated_by="demo", label="payments-platform (code only)")
+    store.save(first.to_dict())
+    print(f"  {DIM}scan 1 of 2 — code and dependencies: "
+          f"{first.kpis()['total_assets']} assets{RST}")
+
+    targets = {
+        "source": [DEMO_APP],
+        "config": [DEMO_APP],
+        "dependencies": [DEMO_APP],
+        "binary": [DEMO_APP],
+        "container": ["samples/vulnerable-image"],
+        "cloud": ["file://samples/keystore-export.json",
+                  "file://samples/hsm-export.json"],
+    }
+    second = run_scan(targets, policy, initiated_by="demo",
+                      label="payments-platform (full estate)")
+    store.save(second.to_dict())
+    _print_report(second, args.limit)
+
+    drift = diff_reports(first.to_dict(), second.to_dict())
+    s = drift["summary"]
+    print(f"\n{CYA}drift between the two scans: +{s['added']} new, "
+          f"~{s['changed']} changed, -{s['removed']} removed{RST}")
+
+    if not args.serve:
+        return 0
+    args.policy = policy_path
+    return cmd_serve(args)
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
     from .api import create_app
@@ -317,6 +380,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--policy", default=None)
     p.set_defaults(func=cmd_serve)
+
+    p = sub.add_parser(
+        "demo", help="seed a repeatable offline scan of the sample estate and serve it")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--policy", default=None)
+    p.add_argument("--limit", type=int, default=12, help="rows in the priority table")
+    p.add_argument("--reset", action="store_true",
+                   help="delete the store first, so the demo is identical every time")
+    p.add_argument("--no-serve", dest="serve", action="store_false",
+                   help="seed the store but do not start the dashboard")
+    p.set_defaults(func=cmd_demo, serve=True)
 
     args = parser.parse_args(argv)
     return args.func(args)

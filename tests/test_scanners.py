@@ -286,3 +286,94 @@ def test_new_languages_report_medium_confidence(tmp_path):
                        ("a.rs", "let mut h = Md5::new();\n")):
         assets = _scan_text(tmp_path, name, body)
         assert assets and all(a.confidence.value == "medium" for a in assets)
+
+
+# ---------------------------------------------------------------------------
+# Module-level constant folding
+# ---------------------------------------------------------------------------
+def test_algorithm_named_by_a_module_constant_is_resolved(tmp_path):
+    assets = _scan_text(tmp_path, "a.py",
+                        'import hashlib\nALGO = "md5"\n'
+                        'def d(b): return hashlib.new(ALGO, b)\n')
+    assert any(a.algorithm == "MD5" for a in assets)
+
+
+def test_key_size_behind_a_constant_is_resolved(tmp_path):
+    """RSA with no size loses the attribute that makes it urgent."""
+    assets = _scan_text(tmp_path, "a.py",
+                        "from cryptography.hazmat.primitives.asymmetric import rsa\n"
+                        "BITS = 1024\n"
+                        "k = rsa.generate_private_key(public_exponent=65537, key_size=BITS)\n")
+    assert any(a.algorithm == "RSA" and a.key_size == 1024 for a in assets)
+
+
+def test_environment_default_is_reported_but_marked_conditional(tmp_path):
+    assets = _scan_text(tmp_path, "a.py",
+                        'import hashlib, os\nALGO = os.environ.get("D", "md5")\n'
+                        'def d(b): return hashlib.new(ALGO, b)\n')
+    md5 = next(a for a in assets if a.algorithm == "MD5")
+    assert md5.confidence.value == "medium"
+    assert "override" in md5.evidence[0].detail["resolved_from"]
+
+
+def test_getattr_with_a_literal_attribute_resolves(tmp_path):
+    assets = _scan_text(tmp_path, "a.py",
+                        'import hashlib\nfn = getattr(hashlib, "sha1")\n')
+    assert any(a.algorithm == "SHA-1" for a in assets)
+
+
+def test_a_function_local_binding_is_not_folded(tmp_path):
+    """Only module scope is walked. A local can be rebound on another path, and
+    following that is dataflow analysis, not constant folding."""
+    assets = _scan_text(tmp_path, "a.py",
+                        'import hashlib\n'
+                        'def d(b):\n    algo = "md5"\n    return hashlib.new(algo, b)\n')
+    assert not [a for a in assets if a.algorithm == "MD5"]
+
+
+def test_folding_never_executes_what_it_reads(tmp_path):
+    """A scanner that evaluates expressions can be made to run anything."""
+    assets = _scan_text(tmp_path, "a.py",
+                        'import hashlib\nALGO = __import__("os").popen("id").read()\n'
+                        'def d(b): return hashlib.new(ALGO, b)\n')
+    assert assets == []
+
+
+def test_unresolvable_constant_is_dropped_not_guessed(tmp_path):
+    assets = _scan_text(tmp_path, "a.py",
+                        'import hashlib, os\nALGO = os.environ["DIGEST"]\n'
+                        'def d(b): return hashlib.new(ALGO, b)\n')
+    assert assets == []
+
+
+def test_one_algorithm_in_one_binary_is_one_row(tmp_path):
+    """A symbol observation and a library inference are the same fact.
+
+    Emitting both put two identical-looking rows on the dashboard for one
+    algorithm in one file, and they could never merge: `identity_key` keys a
+    library-backed finding on the library and a symbol finding on the location.
+    """
+    blob = tmp_path / "app.bin"
+    blob.write_bytes(b"\x7fELF" + b"\x00" * 64
+                     + b"OpenSSL 3.0.11 19 Sep 2023" + b"\x00" * 16
+                     + b"DH_generate_key" + b"\x00" * 16)
+    assets = BinaryScanner().scan(str(blob)).assets
+
+    dh = [a for a in assets if a.algorithm == "DH"]
+    assert len(dh) == 1, [(a.algorithm, a.library, a.detection_methods) for a in dh]
+    # The stronger evidence is the one that survives...
+    assert dh[0].detection_methods == ["binary-symbol-string"]
+    # ...and the library context is kept on it rather than thrown away.
+    assert "openssl" in dh[0].evidence[0].detail["linked_libraries"]
+
+
+def test_a_library_algorithm_not_observed_directly_is_still_reported(tmp_path):
+    """Dropping the inference entirely would lose real coverage."""
+    blob = tmp_path / "app.bin"
+    blob.write_bytes(b"\x7fELF" + b"\x00" * 64
+                     + b"OpenSSL 3.0.11 19 Sep 2023" + b"\x00" * 16)
+    assets = BinaryScanner().scan(str(blob)).assets
+    inferred = [a for a in assets if a.algorithm == "DH"]
+    assert len(inferred) == 1
+    assert inferred[0].library == "openssl"
+    assert inferred[0].detection_methods == ["binary-version-string"]

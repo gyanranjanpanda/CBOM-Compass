@@ -536,6 +536,111 @@ def _expand(name: str, aliases: dict[str, str]) -> str:
     return f"{target}.{rest}" if rest else target
 
 
+# How a folded value reads in the evidence drill-down, and what it does to
+# confidence. A source literal is exactly as certain as writing the value at the
+# call site. An environment default is what runs unless the deployment overrides
+# it — a real finding, but one the reader must be able to see is conditional.
+ORIGIN_NOTE = {
+    "literal": "module-level constant",
+    "env-default": "default of an environment variable; runtime may override",
+}
+
+
+def _origin_confidence(origin: str) -> Confidence:
+    return Confidence.HIGH if origin == "literal" else Confidence.MEDIUM
+
+
+def _const_value(node: ast.AST, aliases: dict[str, str]) -> tuple[object, str] | None:
+    """Fold a expression down to a literal, returning (value, provenance).
+
+    Two provenances, and the difference matters for confidence:
+
+    ``literal``      the value is written in the source and cannot change.
+    ``env-default``  the value is the *default* of an environment lookup. It is
+                     what runs unless the variable is set, which makes it a real
+                     finding — but one the deployment can override, so it is
+                     reported at medium confidence and says so.
+
+    Only the shapes that actually occur are folded: string and integer
+    constants, ``os.environ.get(key, default)`` / ``os.getenv``, and ``int()``
+    or ``str()`` wrapped around either. No general evaluation, because a scanner
+    that executes what it reads is a scanner that can be made to run anything.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, int)):
+        return node.value, "literal"
+    if not isinstance(node, ast.Call):
+        return None
+
+    callee = _expand(_dotted(node.func), aliases)
+    tail = callee.rsplit(".", 1)[-1]
+
+    if callee.endswith("environ.get") or tail == "getenv":
+        if len(node.args) >= 2:
+            inner = _const_value(node.args[1], aliases)
+            if inner is not None:
+                return inner[0], "env-default"
+        return None
+    if tail in {"int", "str"} and node.args:
+        inner = _const_value(node.args[0], aliases)
+        if inner is None:
+            return None
+        try:
+            return (int(inner[0]) if tail == "int" else str(inner[0])), inner[1]
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def module_constants(tree: ast.Module,
+                     aliases: dict[str, str]) -> dict[str, tuple[object, str]]:
+    """Module-level names bound to a foldable constant.
+
+    Configuration-driven cryptography is the single largest class of finding a
+    call-site-only scanner misses, and almost all of it is this shape:
+
+        ALGORITHM = os.environ.get("DIGEST", "md5")
+        digest    = hashlib.new(ALGORITHM, blob)
+
+    The algorithm never appears at the call site, but it is right there at the
+    top of the file. Only module scope is walked: a name assigned inside a
+    function can be reassigned on any path, and following that properly is
+    dataflow analysis, not constant folding.
+    """
+    constants: dict[str, tuple[object, str]] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            continue
+        folded = _const_value(node.value, aliases)
+        if folded is not None:
+            constants[target.id] = folded
+    return constants
+
+
+def resolve_name(node: ast.AST, constants: dict[str, tuple[object, str]]):
+    """Look an `ast.Name` up in the module constant table."""
+    if isinstance(node, ast.Name):
+        return constants.get(node.id)
+    return None
+
+
+def getattr_target(node: ast.Call, aliases: dict[str, str]) -> str | None:
+    """`getattr(hashlib, "sha1")` names an algorithm as plainly as `hashlib.sha1`.
+
+    The attribute is a literal, so this is indirection in spelling only — there
+    is nothing dynamic about it, and it resolves to the same dotted name.
+    """
+    if len(node.args) != 2:
+        return None
+    attribute = node.args[1]
+    if not (isinstance(attribute, ast.Constant) and isinstance(attribute.value, str)):
+        return None
+    base = _expand(_dotted(node.args[0]), aliases)
+    return f"{base}.{attribute.value}" if base else None
+
+
 def _dotted(node: ast.AST) -> str:
     """Resolve a call target to a dotted string, e.g. hashlib.md5."""
     parts: list[str] = []
@@ -582,8 +687,9 @@ class SourceScanner(Scanner):
             return result
         lines = text.splitlines()
         aliases = _import_aliases(tree)
+        constants = module_constants(tree, aliases)
         modes_by_line: dict[int, str] = {}
-        pending: list[tuple[int, str, dict, Confidence]] = []
+        pending: list[tuple[int, str, dict, Confidence, dict]] = []
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -591,6 +697,12 @@ class SourceScanner(Scanner):
             name = _expand(_dotted(node.func), aliases)
             if not name:
                 continue
+            detail: dict = {}
+            if name.rsplit(".", 1)[-1] == "getattr":
+                indirect = getattr_target(node, aliases)
+                if indirect:
+                    name = indirect
+                    detail["resolved_from"] = "getattr with a literal attribute name"
             for mode_key, mode_val in PY_MODE_RULES.items():
                 if name.endswith(mode_key):
                     modes_by_line[node.lineno] = mode_val
@@ -605,11 +717,15 @@ class SourceScanner(Scanner):
                     from_literal = detect_pqc(literal)
                     if from_literal:
                         algorithm, pqc_params = from_literal
-                pending.append((node.lineno, algorithm, dict(pqc_params), Confidence.HIGH))
+                pending.append((node.lineno, algorithm, dict(pqc_params),
+                                Confidence.HIGH, detail))
                 continue
             algorithm, params = PY_CALL_RULES[match]
             params = dict(params)
-            key_size, confidence = self._python_key_size(node, match)
+            key_size, confidence, size_origin = self._python_key_size(
+                node, match, constants)
+            if size_origin:
+                detail["key_size_resolved_from"] = size_origin
             arg_mode = self._python_mode_arg(node)
             if arg_mode:
                 params["mode"] = arg_mode
@@ -626,10 +742,22 @@ class SourceScanner(Scanner):
                     algorithm = literal
                     confidence = Confidence.HIGH
                 else:
-                    continue
-            pending.append((node.lineno, algorithm, {**params, **({"key_size": key_size} if key_size else {})}, confidence))
+                    # `hashlib.new(ALGORITHM)` — the name is not at the call
+                    # site, but it may be bound to a constant at module scope.
+                    folded = next(
+                        (resolve_name(arg, constants) for arg in node.args
+                         if resolve_name(arg, constants) is not None), None)
+                    if folded is None or not isinstance(folded[0], str):
+                        continue
+                    algorithm, origin = folded[0], folded[1]
+                    detail["resolved_from"] = ORIGIN_NOTE[origin]
+                    confidence = (Confidence.HIGH if origin == "literal"
+                                  else Confidence.MEDIUM)
+            pending.append((node.lineno, algorithm,
+                            {**params, **({"key_size": key_size} if key_size else {})},
+                            confidence, detail))
 
-        for lineno, algorithm, params, confidence in pending:
+        for lineno, algorithm, params, confidence, detail in pending:
             key_size = params.pop("key_size", None)
             for offset in (0, -1, 1, -2, 2):
                 if lineno + offset in modes_by_line:
@@ -638,7 +766,7 @@ class SourceScanner(Scanner):
             loc = f"{path.relative_to(root) if root != path else path}:{lineno}"
             snippet = lines[lineno - 1].strip() if 0 < lineno <= len(lines) else None
             result.assets.append(self._asset(algorithm, key_size, params, loc, snippet,
-                                             "python-ast", confidence))
+                                             "python-ast", confidence, detail))
         return result
 
     @staticmethod
@@ -649,30 +777,54 @@ class SourceScanner(Scanner):
         return None
 
     @staticmethod
-    def _python_key_size(node: ast.Call, callee: str = "") -> tuple[int | None, Confidence]:
-        """Literal argument -> high confidence; a variable -> medium."""
+    def _python_key_size(node: ast.Call, callee: str = "",
+                         constants: dict[str, tuple[object, str]] | None = None
+                         ) -> tuple[int | None, Confidence, str | None]:
+        """Returns (key size, confidence, how the size was resolved).
+
+        A literal argument is high confidence. A variable used to mean "we
+        cannot know" and the size was dropped; now it is looked up in the
+        module constant table first, because `key_size=KEY_BITS` with
+        `KEY_BITS = int(os.environ.get("RSA_BITS", "1024"))` at the top of the
+        file is an RSA-1024 key, and reporting RSA with no size loses the one
+        attribute that makes it urgent.
+        """
+        constants = constants or {}
+
+        def folded(value: ast.AST) -> tuple[int, str] | None:
+            hit = resolve_name(value, constants)
+            if hit is None or not isinstance(hit[0], int) or isinstance(hit[0], bool):
+                return None
+            return hit[0], hit[1]
+
         for kw in node.keywords:
             if kw.arg in {"key_size", "bits", "modulus_length", "public_exponent_size"}:
                 if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, int):
-                    return kw.value.value, Confidence.HIGH
-                return None, Confidence.MEDIUM
+                    return kw.value.value, Confidence.HIGH, None
+                hit = folded(kw.value)
+                if hit:
+                    return hit[0], _origin_confidence(hit[1]), ORIGIN_NOTE[hit[1]]
+                return None, Confidence.MEDIUM, None
         index = KEY_SIZE_ARG_INDEX.get(callee)
         if index is not None:
             if len(node.args) > index:
                 chosen = node.args[index]
                 if isinstance(chosen, ast.Constant) and isinstance(chosen.value, int):
-                    return chosen.value, Confidence.HIGH
-                return None, Confidence.MEDIUM
+                    return chosen.value, Confidence.HIGH, None
+                hit = folded(chosen)
+                if hit:
+                    return hit[0], _origin_confidence(hit[1]), ORIGIN_NOTE[hit[1]]
+                return None, Confidence.MEDIUM, None
             # Key size passed by keyword under a name we do not recognise, or
             # omitted entirely: say nothing rather than read another argument.
-            return None, Confidence.MEDIUM if node.args else Confidence.HIGH
+            return None, Confidence.MEDIUM if node.args else Confidence.HIGH, None
         for arg in node.args:
             if isinstance(arg, ast.Constant) and isinstance(arg.value, int) and arg.value >= 56:
-                return arg.value, Confidence.HIGH
+                return arg.value, Confidence.HIGH, None
         if node.args or node.keywords:
             if any(not isinstance(a, ast.Constant) for a in node.args):
-                return None, Confidence.MEDIUM
-        return None, Confidence.HIGH
+                return None, Confidence.MEDIUM, None
+        return None, Confidence.HIGH, None
 
     @staticmethod
     def _declared_non_security(node: ast.Call) -> bool:
@@ -778,7 +930,7 @@ class SourceScanner(Scanner):
 
     def _asset(self, algorithm: str, key_size: int | None, params: dict,
                location: str, snippet: str | None, method: str,
-               confidence: Confidence) -> Asset:
+               confidence: Confidence, detail: dict | None = None) -> Asset:
         from ..knowledge.algorithms import normalise
         return Asset(
             algorithm=normalise(algorithm),
@@ -786,5 +938,6 @@ class SourceScanner(Scanner):
             key_size=key_size,
             parameters=params,
             location_class="call-site",
-            evidence=[Evidence(self.source_type, method, location, confidence, snippet)],
+            evidence=[Evidence(self.source_type, method, location, confidence,
+                               snippet, detail or {})],
         )

@@ -14,6 +14,17 @@ Full specification: [`docs/cbom-compass-prd.md`](docs/cbom-compass-prd.md) (PRD 
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m cbom_compass.cli demo --reset
+```
+
+`demo` seeds a repeatable scan of the bundled sample estate — application code, its deployment
+configuration, dependencies, binaries, a container tree, and two key-store exports standing in for
+cloud KMS and a PKCS#11 HSM — then opens the dashboard on it. Six source types, about 160 assets,
+**no network access at all**, and the same numbers every run.
+
+For an empty dashboard instead, `serve`:
+
+```bash
 .venv/bin/python -m cbom_compass.cli serve --policy crypto-policy.yaml
 ```
 
@@ -305,25 +316,42 @@ is not cryptography in use, and filtering comments removed 14 false positives.
 .venv/bin/python -m cbom_compass.cli eval
 ```
 
-Against `corpus/` — 92 usages hand-labelled from source across seven languages, plus seven negative
+Against `corpus/` — 94 usages hand-labelled from source across seven languages, plus seven negative
 controls that mention cryptography in prose and identifiers while performing none:
 
 | Metric set | Precision | Recall | F1 |
 |---|---|---|---|
-| **algorithm** (did we notice the usage) | 100.0% | 97.5% | 0.99 |
-| **strict** (key size, mode and curve too) | 98.9% | 96.7% | 0.98 |
+| **algorithm** (did we notice the usage) | 100.0% | 96.3% | 0.98 |
+| **strict** (key size, mode and curve too) | 100.0% | 96.8% | 0.98 |
 
 Per language, algorithm-level: C 100% / 100%, C# 100% / 100%, Go 100% / 100%, Java 100% / 100%,
-JS 100% / 100%, Python 100% / 92.0%, Rust 100% / 100%. Zero findings on the negative controls.
+JS 100% / 100%, Python 100% / 89.3%, Rust 100% / 100%. Zero findings on the negative controls.
 
 `tests/test_evaluate.py` derives the required language list from the scanner's own rule table, so
 adding a language without labelling a corpus for it fails the suite rather than shipping an
 unmeasured claim.
 
-Every remaining miss is in `corpus/python/hard_dynamic.py` — algorithm names read from the
-environment, key sizes from variables, `getattr(hashlib, ...)` indirection. Those are labelled as
-expected findings and counted as misses rather than excluded, because hiding a limitation is not the
-same as not having one. `tests/test_evaluate.py` asserts that no miss appears anywhere else.
+**Why recall is not 100%, on purpose.** Module-level constant folding closed every case in
+`corpus/python/hard_dynamic.py`, which used to be misses end to end:
+
+```python
+ALGORITHM = os.environ.get("DIGEST", "md5")     # -> MD5,  medium confidence
+KEY_BITS  = int(os.environ.get("RSA_BITS", "1024"))   # -> RSA-1024, medium
+fn = getattr(hashlib, "sha1")                   # -> SHA-1, high confidence
+```
+
+A value written as a source literal is as certain as writing it at the call site, so it is reported
+at **high** confidence. A value taken from the *default* of an environment lookup is what runs unless
+the deployment overrides it — a real finding, but a conditional one, so it is reported at **medium**
+and the evidence says `default of an environment variable; runtime may override`.
+
+That took both metric sets to 100%, which is the point at which a corpus stops measuring anything.
+So `corpus/python/hard_dataflow.py` was added with the cases that are still out of reach — a binding
+inside a function (needs intra-procedural dataflow), a value that differs by branch (needs path
+sensitivity), and an algorithm arriving as a function argument (needs the cross-procedural analysis
+the source scanner documents as its semgrep gap). They are labelled as expected findings and counted
+as misses, because hiding a limitation is not the same as not having one, and
+`tests/test_evaluate.py` asserts that no miss appears anywhere else.
 
 Building the corpus found seven real bugs, including Triple-DES being reported as single DES
 (`des-ede3-cbc` resolving via its `des` prefix) and every pycryptodome cipher mode being dropped.

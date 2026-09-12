@@ -86,3 +86,42 @@ def test_drift_detects_score_changes_when_z_moves():
     d = diff(before, after)
     assert d["summary"]["changed"] > 0
     assert any("score" in c["changes"] for c in d["changed"])
+
+
+# ---------------------------------------------------------------------------
+# The offline demo path
+# ---------------------------------------------------------------------------
+def test_demo_seeds_two_scans_across_many_sources_without_a_network(tmp_path):
+    """Scanning something live in front of an audience depends on venue wifi.
+
+    This path has to be offline and repeatable, and it has to leave two scans
+    behind so the drift view shows a real diff instead of an empty state.
+    """
+    from cbom_compass.cli import main
+    from cbom_compass.store import Store
+
+    db = tmp_path / "demo.db"
+    assert main(["--db", str(db), "demo", "--no-serve", "--reset"]) == 0
+
+    scans = Store(db).list_scans()
+    assert len(scans) == 2
+
+    newest = Store(db).latest()
+    covered = set(newest["run"]["sources_covered"])
+    # Code alone would be a thin demo; the point is breadth across source types.
+    assert {"source", "config", "dependencies", "container", "cloud"} <= covered
+    assert newest["kpis"]["total_assets"] > 100
+    assert newest["errors"] == []
+
+
+def test_demo_is_repeatable(tmp_path):
+    """Same inputs, same inventory — the numbers on the slides have to hold."""
+    from cbom_compass.cli import main
+    from cbom_compass.store import Store
+
+    counts = []
+    for name in ("one.db", "two.db"):
+        db = tmp_path / name
+        main(["--db", str(db), "demo", "--no-serve", "--reset"])
+        counts.append(Store(db).latest()["kpis"]["total_assets"])
+    assert counts[0] == counts[1]

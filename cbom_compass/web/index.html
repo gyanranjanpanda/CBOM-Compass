@@ -39,6 +39,14 @@ main{padding:18px;max-width:1560px;margin:0 auto}
 .view{display:none} .view.on{display:block}
 h2{font-size:13px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-dim);margin:0 0 10px;font-weight:600}
 .sub{color:var(--ink-faint);font-size:12px;margin:-6px 0 14px}
+.stalebar{display:flex;align-items:center;gap:12px;padding:9px 30px;font-size:12px;
+  color:#f0d7a8;background:#2a1f08;border-bottom:1px solid #6b4a08}
+.stalebar[hidden]{display:none}
+.stalebar .sb-mark{display:inline-flex;align-items:center;justify-content:center;
+  width:17px;height:17px;border-radius:50%;background:#b9770e;color:#1a1204;
+  font-weight:700;font-size:11px;flex:0 0 auto}
+.stalebar b{color:#ffe9bd}
+.stalebar .btn{margin-left:auto;padding:4px 11px;font-size:11px}
 
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin-bottom:20px}
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:12px 14px}
@@ -421,6 +429,14 @@ input::placeholder{font-family:var(--sans);letter-spacing:0}
   <span class="fixed-clock">NIST IR 8547: RSA/ECC deprecated <b>2030</b>, disallowed <b>2035</b></span>
 </div>
 
+<!-- Shown only when the scan on screen predates this server session, so a
+     stored scan can never be mistaken for one the viewer just ran. -->
+<div class="stalebar" id="stalebar" hidden>
+  <span class="sb-mark">!</span>
+  <span id="stale-text"></span>
+  <button class="btn" id="stale-new">Run a new scan</button>
+</div>
+
 <main>
   <!-- NO SCAN YET: shown in place of any data view until something is scanned -->
   <section class="view" id="v-noscan">
@@ -647,12 +663,36 @@ let REPORT=null, FILTERS={q:'',status:'',source:'',crit:'',conf:''}, SORT={k:'sc
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const pill=s=>`<span class="pill s-${s}"><span class="ic">${ICON[s]||'?'}</span>${LABEL[s]||s}</span>`;
 
+// The dashboard opens on the newest scan in the store, which is not
+// necessarily one this visitor ran. Saying when it ran and what it covered is
+// the difference between evidence and a screenshot.
+function whenLabel(iso){
+  if(!iso) return 'time unknown';
+  const d=new Date(iso);
+  if(isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined,{day:'numeric',month:'short',year:'numeric',
+                                     hour:'2-digit',minute:'2-digit'});
+}
+
+function renderProvenance(){
+  const run=(REPORT&&REPORT.run)||{};
+  const origin=run.origin_label||'unknown target';
+  $('#scanid').textContent=`scan ${run.scan_id} · ${origin} · ${whenLabel(run.started_at)}`;
+  const stale=run.from_this_session===false;
+  const bar=$('#stalebar');
+  bar.hidden=!stale;
+  if(stale){
+    $('#stale-text').innerHTML=`Showing a <b>previous scan</b> — ${esc(origin)}, run `
+      +`${esc(whenLabel(run.started_at))}. Nothing on screen was scanned in this session.`;
+  }
+}
+
 async function load(z){
   const r=await fetch('/api/report'+(z?`?z=${z}`:''));
   if(r.status===404){renderEmpty();return null}
   REPORT=await r.json();
   Z=REPORT.policy.z_year; $('#z').value=Z; $('#zval').textContent=Z;
-  $('#scanid').textContent='scan '+REPORT.run.scan_id;
+  renderProvenance();
   $('#zeffect').textContent=`${REPORT.kpis.z_sensitive}/${REPORT.kpis.total_assets} scores move with Z`;
   renderAll(); return REPORT;
 }
@@ -662,6 +702,7 @@ async function load(z){
 // other view and left the app dead until a page reload.
 function renderEmpty(){
   $('#scanid').textContent='no scan yet';
+  $('#stalebar').hidden=true;
   show('scan');
   setStatus('idle','Nothing scanned yet',
     'Upload an archive or give a public repository URL to build your first inventory.');
@@ -801,6 +842,7 @@ function scanRepo(url){
   ['dragover','drop'].forEach(ev=>addEventListener(ev,e=>e.preventDefault()));
 
   $('#ns-go').onclick=()=>show('scan');
+  $('#stale-new').onclick=()=>show('scan');
   $('#repogo').onclick=()=>scanRepo($('#repourl').value);
   $('#repourl').addEventListener('keydown',e=>{ if(e.key==='Enter')scanRepo($('#repourl').value) });
 })();
@@ -1250,7 +1292,7 @@ async function loadScan(scanId){
   if(!r.ok){ setStatus('fail','Could not load that scan',`the server returned ${r.status}`); return }
   REPORT=await r.json();
   Z=REPORT.policy.z_year; $('#z').value=Z; $('#zval').textContent=Z;
-  $('#scanid').textContent='scan '+REPORT.run.scan_id;
+  renderProvenance();
   $('#zeffect').textContent=`${REPORT.kpis.z_sensitive}/${REPORT.kpis.total_assets} scores move with Z`;
   renderAll(); renderScans(); show('overview');
 }

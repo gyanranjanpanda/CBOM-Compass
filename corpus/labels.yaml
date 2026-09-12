@@ -60,6 +60,16 @@ files:
       # a detection one.
       - {algorithm: MD5, note: "usedforsecurity=False — inventoried, not scored"}
 
+  # Beyond module-level constant folding. Labelled as expected findings and
+  # counted as misses: a corpus the scanner passes completely has stopped
+  # measuring anything, so the hard cases stay in and stay counted.
+  - path: python/hard_dataflow.py
+    expected:
+      - {algorithm: SHA-1, note: "bound inside a function — needs intra-procedural dataflow"}
+      - {algorithm: MD5, note: "one of two reachable branch values — needs path sensitivity"}
+      - {algorithm: SHA-256, note: "the other reachable branch value"}
+      - {algorithm: MD5, note: "algorithm arrives as a parameter — needs cross-procedural analysis"}
+
   - path: python/negative_lookalikes.py
     expected: []          # negative control — any finding here is a false positive
 

@@ -230,3 +230,20 @@ def test_no_horizontal_page_scroll(page):
         overflow = page.evaluate(
             "() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
         assert overflow <= 1, f"{view} scrolls the page sideways by {overflow}px"
+
+
+def test_header_carries_scan_provenance(page):
+    """A bare scan id cannot be told apart from last week's scan of someone
+    else's repository. The header has to say what and when."""
+    _show(page, "overview")
+    header = page.inner_text("#scanid")
+    assert "scan " in header
+    # origin and timestamp, separated by the middot the header uses
+    assert header.count("·") >= 2, header
+
+
+def test_no_stale_banner_for_a_scan_from_this_session(page):
+    """The banner must be quiet when it has nothing to warn about, or it
+    becomes wallpaper and stops being read."""
+    _show(page, "overview")
+    assert not page.is_visible("#stalebar")

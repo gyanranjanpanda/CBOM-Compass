@@ -235,17 +235,19 @@ class BinaryScanner(Scanner):
         loc = str(path.relative_to(root)) if root != path else str(path)
 
         result.extend(self._version_strings(path, root, fmt, skip=set()))
-        for library in {lib for _, lib in BINARY_SIGNATURES if re.search(
-                next(p for p, l in BINARY_SIGNATURES if l == lib), data)}:
-            for algorithm in algorithms_for(library):
-                result.assets.append(Asset(
-                    algorithm=algorithm, library=library, location_class="linked-library",
-                    evidence=[Evidence(
-                        self.source_type, "binary-version-string", loc, Confidence.MEDIUM,
-                        f"linked {library} exposes {algorithm}")],
-                ))
+        linked = {lib for _, lib in BINARY_SIGNATURES if re.search(
+            next(p for p, l in BINARY_SIGNATURES if l == lib), data)}
 
+        # Symbols first, because they are the stronger claim about the same
+        # fact. "A DH symbol is present in this file" is an observation;
+        # "this file links OpenSSL, and OpenSSL exposes DH" is an inference
+        # from it. Emitting both put two rows on the dashboard for one
+        # algorithm in one binary — and they could never merge, because
+        # `Asset.identity_key` keys library-backed findings on the library and
+        # symbol findings on the location.
+        observed: set[str] = set()
         seen: set[tuple] = set()
+        symbol_assets: list[Asset] = []
         for raw, algorithm in SYMBOL_ALGORITHMS.items():
             if raw not in data or algorithm == "unknown":
                 continue
@@ -254,15 +256,29 @@ class BinaryScanner(Scanner):
             if identity in seen:
                 continue
             seen.add(identity)
-            result.assets.append(Asset(
+            observed.add(algorithm)
+            symbol_assets.append(Asset(
                 algorithm=algorithm, key_size=key_size,
                 parameters={"mode": mode} if mode else {},
                 location_class="linked-library",
                 evidence=[Evidence(
                     self.source_type, "binary-symbol-string", loc, Confidence.MEDIUM,
                     f"{fmt}: symbol name {raw.decode()} present "
-                    f"(not confirmed imported — LIEF could not parse this file)")],
+                    f"(not confirmed imported — LIEF could not parse this file)",
+                    {"linked_libraries": sorted(linked)} if linked else {})],
             ))
+        result.assets.extend(symbol_assets)
+
+        for library in linked:
+            for algorithm in algorithms_for(library):
+                if algorithm in observed:
+                    continue      # already observed directly, in this same file
+                result.assets.append(Asset(
+                    algorithm=algorithm, library=library, location_class="linked-library",
+                    evidence=[Evidence(
+                        self.source_type, "binary-version-string", loc, Confidence.MEDIUM,
+                        f"linked {library} exposes {algorithm}")],
+                ))
 
         for algorithm, blob in CONSTANTS.items():
             if blob in data:

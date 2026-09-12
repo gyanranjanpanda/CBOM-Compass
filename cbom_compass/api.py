@@ -8,6 +8,8 @@ the audit log.
 
 from __future__ import annotations
 
+from dataclasses import fields as dataclass_fields
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -47,19 +49,83 @@ def _require(role: str, permission: str) -> None:
         )
 
 
+# How far before the server started a scan may have run and still count as
+# "this session". Seeding a store and then serving it is one continuous act —
+# `cbom-compass demo` does exactly that — so a strict comparison against the
+# process start time would flag a scan that is seconds old. The banner has to
+# mean "this is not something you just ran", or it becomes wallpaper and stops
+# being read.
+SESSION_GRACE = timedelta(minutes=15)
+
+
+def _parse_time(value: object) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _scope_summary(scope: list[str], limit: int = 2) -> str:
+    """Human-readable target from a scan's scope.
+
+    `target_scope` records one entry per scanner, so a single directory shows up
+    three or four times prefixed by the scanner that read it. Collapse to the
+    distinct targets and name them the way a person would.
+    """
+    seen: list[str] = []
+    for entry in scope:
+        target = entry.split(":", 1)[1] if ":" in entry else entry
+        target = target.rstrip("/")
+        if target and target not in seen:
+            seen.append(target)
+    if not seen:
+        return "unknown target"
+    shown = ", ".join(Path(t).name or t for t in seen[:limit])
+    return shown + (f" +{len(seen) - limit} more" if len(seen) > limit else "")
+
+
 def create_app(db_path: str | Path = DEFAULT_DB,
                policy_path: str | None = None,
                workspace: str | Path | None = None,
                keep_workspaces: int = 20) -> FastAPI:
     app = FastAPI(title="CBOM Compass", version="0.1.0")
     store = Store(db_path)
-    state: dict[str, Any] = {"policy": Policy.load(policy_path), "policy_path": policy_path}
+    state: dict[str, Any] = {
+        "policy": Policy.load(policy_path),
+        "policy_path": policy_path,
+        # When this server started, compared against each scan's timestamp in
+        # `_with_provenance` to decide whether the dashboard is showing
+        # something the viewer actually ran.
+        "session_started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
     work_root = resolve_workspace(workspace)   # created on first scan, not at import
 
     def current_report() -> dict:
         document = store.latest()
         if not document:
             raise HTTPException(404, "no scans yet — run a scan first")
+        return document
+
+    def _with_provenance(document: dict) -> dict:
+        """Say when this scan ran and what it covered.
+
+        The dashboard opens on the newest row in the store, which is not
+        necessarily anything the person looking at it ran. Shown bare, a
+        week-old scan of someone else's repository is indistinguishable from a
+        fresh one — and for a tool whose whole argument is evidence and
+        provenance, silently presenting stale data as current is the worst
+        available failure. These two fields let the UI label it.
+        """
+        run = document.get("run") or {}
+        started = _parse_time(run.get("started_at"))
+        session = _parse_time(state["session_started"])
+        run["from_this_session"] = bool(
+            started and session and started >= session - SESSION_GRACE)
+        run["origin_label"] = (
+            (run.get("origin") or {}).get("label")
+            or run.get("label")
+            or _scope_summary(run.get("target_scope") or [])
+        )
         return document
 
     def rescore(document: dict, policy: Policy) -> dict:
@@ -77,7 +143,18 @@ def create_app(db_path: str | Path = DEFAULT_DB,
         ]
         risks = risk.classify_all(assets, policy)
         recos = recommend.recommend_all(assets, risks, relationships, policy)
-        run = ScanRun(**document["run"])
+
+        # A stored run carries keys `ScanRun` does not declare — an uploaded
+        # scan records `origin`, and `report_for` adds provenance. Splatting the
+        # lot into the constructor raised TypeError, which meant dragging the Z
+        # slider on any uploaded or cloned scan returned a 500: the single most
+        # likely thing a first-time visitor does. Unknown keys are carried
+        # across untouched instead of being fed to the dataclass.
+        declared = {f.name for f in dataclass_fields(ScanRun)}
+        stored = document["run"]
+        run = ScanRun(**{k: v for k, v in stored.items() if k in declared})
+        extra = {k: v for k, v in stored.items() if k not in declared}
+
         report = ScanReport(
             run=run,
             inventory=Inventory(assets, relationships,
@@ -85,7 +162,9 @@ def create_app(db_path: str | Path = DEFAULT_DB,
             risks=risks, recommendations=recos, policy=policy,
             raw_asset_count=document["kpis"]["raw_findings"],
         )
-        return report.to_dict()
+        rescored = report.to_dict()
+        rescored["run"].update(extra)
+        return rescored
 
     def report_for(z: int | None = None, scan: str | None = None) -> dict:
         """Plain function behind /api/report.
@@ -101,8 +180,8 @@ def create_app(db_path: str | Path = DEFAULT_DB,
             adjusted = Policy.load(state["policy_path"])
             adjusted.z_year = int(z)
             adjusted.cnsa2_required = state["policy"].cnsa2_required
-            return rescore(document, adjusted)
-        return document
+            return _with_provenance(rescore(document, adjusted))
+        return _with_provenance(document)
 
     # ----------------------------------------------------------- dashboard
     @app.get("/", include_in_schema=False)
