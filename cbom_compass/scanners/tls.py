@@ -20,7 +20,9 @@ import socket
 import ssl
 from datetime import datetime, timezone
 
-from ..models import Asset, AssetType, Confidence, Evidence, Relationship, SourceType
+from .. import x509
+from ..models import (Asset, AssetType, Confidence, Evidence, Relationship,
+                      SourceType)
 from .base import ScanError, ScanResult, Scanner
 
 CIPHER_ALGORITHMS = {
@@ -133,33 +135,35 @@ class TLSScanner(Scanner):
             except ValueError:
                 pass
 
-        # Public key algorithm from the DER SPKI OID.
+        # Parse the certificate properly. This used to search the raw DER for
+        # OID byte strings and guess the key size from the certificate's total
+        # length — which could not read a subject, so a chain was impossible,
+        # and inferred RSA-2048 from "the file is biggish".
         algorithm, key_size, curve = "unknown", None, None
+        parsed = None
         if der:
-            if b"\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01" in der:      # rsaEncryption
-                algorithm = "RSA"
-                for candidate, marker in ((4096, b"\x02\x82\x02\x01\x00"), (2048, b"\x02\x82\x01\x01\x00")):
-                    if marker in der:
-                        key_size = candidate
-                        break
-                else:
-                    key_size = 1024 if len(der) < 700 else 2048
-            elif b"\x2a\x86\x48\xce\x3d\x02\x01" in der:            # id-ecPublicKey
-                algorithm = "ECDSA"
-                if b"\x2a\x86\x48\xce\x3d\x03\x01\x07" in der:
-                    curve, key_size = "secp256r1", 256
-                elif b"\x2b\x81\x04\x00\x22" in der:
-                    curve, key_size = "secp384r1", 384
+            try:
+                parsed = x509.parse_der(der)
+            except (x509.DERError, ValueError):
+                parsed = None
+        if parsed is not None:
+            algorithm = parsed.public_key_algorithm
+            key_size, curve = parsed.key_size, parsed.curve
+            subject = subject or parsed.subject
+            issuer = issuer or parsed.issuer
 
         asset = Asset(
             algorithm=algorithm, asset_type=AssetType.CERTIFICATE, key_size=key_size,
             parameters={"curve": curve} if curve else {},
             location_class="negotiated",
             certificate={
+                **(parsed.to_dict() if parsed is not None else {}),
                 "subject": subject, "issuer": issuer,
                 "not_before": not_before, "not_after": not_after,
-                "days_until_expiry": days_left,
-                "self_signed": bool(subject and subject == issuer),
+                "days_until_expiry": days_left if days_left is not None
+                else (parsed.days_until_expiry if parsed else None),
+                "self_signed": (parsed.self_signed if parsed is not None
+                                else bool(subject and subject == issuer)),
                 "fingerprint_sha256": hashlib.sha256(der).hexdigest() if der else None,
             },
             evidence=[Evidence(

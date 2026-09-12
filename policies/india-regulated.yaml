@@ -1,0 +1,205 @@
+# CBOM Compass policy — Indian regulated sectors
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  READ THIS FIRST
+#
+#  This is a STARTING POINT, not legal advice, and the numbers below have not
+#  been settled with counsel. They are indicative periods drawn from the named
+#  instruments; several regimes express their obligation as "N years after the
+#  end of the relationship" or "for the life of the record" rather than a flat
+#  figure, and sectoral circulars override general law in places.
+#
+#  Confirm every value with your compliance function before a score from it goes
+#  in front of a board or a regulator. What the tool gives you is the mechanism:
+#  once the number is agreed, the score that depends on it carries the citation
+#  with it, and stops being our guess.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Why this file exists at all.
+#
+# X — how long data must stay confidential — is the input everything else
+# multiplies through, and it is the one thing no scanner can discover. The
+# defaults in `knowledge/mosca.py` are generic: "financial, so 7 years". An
+# organisation under a retention regime does not have to guess, because the
+# obligation already states how long the data must remain protected. Sourcing X
+# from the instrument turns "we assumed 7 years" into "the Companies Act
+# requires 8", which is a different conversation with an auditor.
+#
+# Usage:
+#   cbom-compass scan ./repo --policy policies/india-regulated.yaml
+
+scoring:
+  # Z is an estimate, not a fact. NIST IR 8547's dates are scored beside it and
+  # do not move when this does.
+  z_year: 2035
+  urgency_scale: 10.0
+  default_criticality: medium
+  criticality_weights:
+    low: 0.4
+    medium: 0.7
+    high: 1.0
+
+compliance:
+  cnsa2_required: false
+
+# ---------------------------------------------------------------------------
+# Data classes, sourced from the obligation rather than from our defaults.
+#
+# `years` is how long the data must stay confidential. `source` names the
+# instrument and is what marks the figure as **regulated** in the report; a class
+# resting on internal judgement uses `note` instead and stays **tagged**.
+# Claiming regulatory backing for a number somebody picked is the one kind of
+# dishonesty this distinction exists to prevent. Either way the text is carried
+# through to the report and the dashboard so a reader can check it.
+#
+# Where an obligation is expressed as a period *after* the relationship ends, the
+# figure here adds a working assumption about relationship length — exactly the
+# sort of thing to settle with counsel.
+# ---------------------------------------------------------------------------
+data_classes:
+
+  aadhaar-linked:
+    years: 25
+    source: >-
+      Aadhaar (Targeted Delivery of Financial and Other Subsidies, Benefits and
+      Services) Act 2016 and UIDAI regulations. An Aadhaar number is a lifetime
+      identifier, so data linked to one has to stay confidential well past any
+      retention window — treated here as beyond any plausible Q-Day.
+
+  banking-kyc:
+    years: 10
+    source: >-
+      RBI Master Direction on Know Your Customer — KYC records maintained for a
+      defined period after the customer relationship ends. The figure here
+      assumes a long-lived relationship; shorten it if yours are not.
+
+  books-of-account:
+    years: 8
+    source: >-
+      Companies Act 2013, section 128 — books of account and vouchers preserved
+      for eight financial years.
+
+  securities-records:
+    years: 8
+    source: >-
+      SEBI record-keeping obligations for registered intermediaries. Sectoral
+      master circulars vary by intermediary type; confirm yours.
+
+  telecom-cdr:
+    years: 2
+    source: >-
+      Department of Telecommunications Unified Licence conditions on retention
+      of call detail records and IP detail records.
+
+  tax-records:
+    years: 10
+    source: >-
+      Income-tax Act 1961 — reassessment may reach back several years, so
+      supporting records stay relevant for longer than the filing year.
+
+  health-record:
+    years: 15
+    # `note`, not `source`: the sensitivity is cited but the *period* is not, and
+    # the distinction is the point of having two keys.
+    note: >-
+      No single national retention period. NMC/MCI regulations set a short floor
+      for outpatient records; hospital practice and ABDM guidance run far longer,
+      and health data is sensitive personal data under the DPDP Act 2023. The
+      figure here is a conservative working value, not a cited requirement.
+
+  defence-classified:
+    years: 30
+    source: >-
+      Classified defence records. Declassification schedules are measured in
+      decades, which places this firmly beyond Q-Day on any estimate.
+
+  citizen-pii:
+    years: 10
+    source: >-
+      Digital Personal Data Protection Act 2023. The Act sets purpose limitation
+      rather than a fixed period, so this is a working value for personal data
+      held on an ongoing service relationship.
+
+  operational:
+    years: 3
+    note: >-
+      No external obligation — an internal judgement. Operational data kept for
+      troubleshooting and capacity planning.
+
+  session:
+    years: 0.1
+    note: >-
+      No external obligation — an internal judgement. Session state and
+      short-lived tokens, whose confidentiality need not outlive the session.
+
+# ---------------------------------------------------------------------------
+# Services. Map your own paths onto the classes above — these are illustrative.
+#
+# `surface` drives Y, the migration time. `embedded` is the right choice wherever
+# replacement waits on somebody else's release cycle: firmware, an HSM, a payment
+# terminal estate.
+# ---------------------------------------------------------------------------
+services:
+  - name: aadhaar-authentication
+    paths: ["*/auth/*", "*/aadhaar/*", "*/ekyc/*"]
+    data_class: aadhaar-linked
+    criticality: high
+    surface: public-api
+
+  - name: core-banking
+    paths: ["*/accounts/*", "*/ledger/*", "*/kyc/*"]
+    data_class: banking-kyc
+    criticality: high
+    surface: internal-service
+
+  - name: payment-switch
+    paths: ["*/payments/*", "*/upi/*", "*/settlement/*"]
+    data_class: books-of-account
+    criticality: high
+    surface: public-api
+
+  - name: payment-terminals
+    paths: ["*/pos/*", "*/terminal/*", "*/firmware/*"]
+    data_class: books-of-account
+    criticality: high
+    # A terminal estate is replaced on a hardware refresh cycle, not a deploy.
+    surface: embedded
+
+  - name: trading-and-settlement
+    paths: ["*/trading/*", "*/broker/*", "*/demat/*"]
+    data_class: securities-records
+    criticality: high
+    surface: internal-service
+
+  - name: subscriber-records
+    paths: ["*/cdr/*", "*/subscriber/*", "*/hlr/*"]
+    data_class: telecom-cdr
+    criticality: medium
+    surface: internal-service
+
+  - name: health-records
+    paths: ["*/ehr/*", "*/patient/*", "*/abha/*"]
+    data_class: health-record
+    criticality: high
+    surface: public-api
+
+  - name: session-management
+    paths: ["*/session/*", "*/token/*", "*/cache/*"]
+    data_class: session
+    criticality: medium
+    surface: internal-service
+
+  - name: build-dependencies
+    paths: ["requirements.txt", "package.json", "pom.xml", "go.mod"]
+    data_class: operational
+    criticality: low
+    surface: containerised
+
+scanning:
+  # Section 10: live probing outside this list is refused, not warned about.
+  allowlist:
+    - localhost
+    - 127.0.0.1
+  authorization_attestation: >-
+    Replace with a recorded authorisation before probing anything you do not
+    own. Add hosts here only once that authorisation exists.

@@ -20,6 +20,32 @@ CRITICALITY_WEIGHT = {Criticality.LOW: 0.4, Criticality.MEDIUM: 0.7, Criticality
 
 
 @dataclass
+class DataClass:
+    """A data lifetime the organisation has decided on, and where it came from.
+
+    X is the input everything else multiplies through, and our defaults in
+    `knowledge/mosca.py` are generic guesses. An organisation subject to a
+    retention regime does not have to guess: the obligation states how long the
+    data must stay confidential. `source` records which instrument the number
+    came from, so a score can be defended to the regulator that set it rather
+    than to whoever wrote the scanner.
+    """
+
+    name: str
+    years: float
+    # The instrument the figure comes from. Its presence is what makes the
+    # provenance `regulated`, so a class with no external obligation must use
+    # `note` instead — claiming regulatory backing for an internal number would
+    # be the one kind of dishonesty this field exists to prevent.
+    source: str | None = None
+    note: str | None = None
+
+    @property
+    def basis(self) -> str | None:
+        return self.source or self.note
+
+
+@dataclass
 class ServiceTag:
     """A business tag applied to everything matching `paths`."""
 
@@ -48,6 +74,7 @@ class Policy:
     # this setting, not off the asset flag.
     cnsa2_required: bool = False
     services: list[ServiceTag] = field(default_factory=list)
+    data_classes: dict[str, DataClass] = field(default_factory=dict)
     # PRD section 10: live probing is refused outside this list, not warned.
     scan_allowlist: list[str] = field(default_factory=list)
     authorization_attestation: str | None = None
@@ -71,6 +98,19 @@ class Policy:
             )
             for s in raw.get("services", [])
         ]
+        data_classes = {}
+        for name, entry in (raw.get("data_classes") or {}).items():
+            if isinstance(entry, dict):
+                years = entry.get("years")
+                source, note = entry.get("source"), entry.get("note")
+            else:
+                years, source, note = entry, None, None
+            try:
+                data_classes[str(name).lower()] = DataClass(
+                    str(name).lower(), float(years), source, note)
+            except (TypeError, ValueError):
+                continue
+
         scanning = raw.get("scanning", {})
         return cls(
             z_year=int(scoring.get("z_year", 2035)),
@@ -83,6 +123,7 @@ class Policy:
             default_criticality=Criticality(scoring.get("default_criticality", "medium")),
             cnsa2_required=bool(raw.get("compliance", {}).get("cnsa2_required", False)),
             services=services,
+            data_classes=data_classes,
             scan_allowlist=scanning.get("allowlist", []),
             authorization_attestation=scanning.get("authorization_attestation"),
         )
@@ -96,6 +137,23 @@ class Policy:
             if s.matches(location):
                 return s
         return None
+
+    def x_for(self, data_class: str | None) -> tuple[float, str, str | None]:
+        """Data lifetime in years, its provenance, and the instrument behind it.
+
+        An organisation's own definition wins over ours. Where it carries a
+        `source`, the provenance is reported as `regulated` rather than merely
+        `tagged`, because "25 years, because the Aadhaar Act says so" and
+        "25 years, because someone typed it" are not the same claim.
+        """
+        from .knowledge import mosca
+
+        key = (data_class or "").lower()
+        own = self.data_classes.get(key)
+        if own is not None:
+            return own.years, ("regulated" if own.source else "tagged"), own.basis
+        years, provenance = mosca.default_x(data_class)
+        return years, provenance, None
 
     def weight(self, criticality: Criticality) -> float:
         return float(self.criticality_weights.get(criticality.value, 0.7))

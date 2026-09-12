@@ -121,6 +121,16 @@ class Asset:
           criticality. Collapsing them would silently drop one service's tag, so
           location is *included*.
         """
+        # A certificate carries its own identity. The same certificate reached
+        # through a bundle, a standalone file and a live handshake is one
+        # certificate stored three ways, not three certificates — and collapsing
+        # them is what makes "here is the CA, and here is it serving traffic"
+        # one row with three pieces of evidence. Location is excluded for the
+        # same reason it is for a library.
+        fingerprint = (self.certificate or {}).get("fingerprint_sha256")
+        if fingerprint:
+            return hashlib.sha256(f"cert|{fingerprint}".encode()).hexdigest()[:16]
+
         params = ",".join(f"{k}={self.parameters[k]}" for k in sorted(self.parameters))
         parts = [self.algorithm.upper(), str(self.key_size or ""), params]
         if self.library:
@@ -217,7 +227,7 @@ class RiskClassification:
     regulatory_flags: list[str]
     nist_quantum_security_level: int | None
     x_years: float
-    x_source: str          # "tagged" | "assumed"
+    x_source: str          # "regulated" | "tagged" | "assumed"
     y_years: float
     y_source: str          # "tagged" | "estimated"
     z_year_used: int
@@ -234,6 +244,9 @@ class RiskClassification:
     # when Z changes -- NIST IR 8547's dates are fixed - and the UI says so rather
     # than leaving the slider looking broken.
     driver: str = "none"
+    # Which instrument set X, when the policy names one — e.g. an RBI master
+    # direction. Optional so scans stored before this existed still load.
+    x_basis: str | None = None
 
     @property
     def overdue(self) -> bool:

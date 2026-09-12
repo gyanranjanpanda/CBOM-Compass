@@ -126,7 +126,7 @@ def classify_asset(asset: Asset, policy: Policy,
     data_class = tag.data_class if tag else None
     criticality = tag.criticality if tag else policy.default_criticality
 
-    x, x_source = mosca.default_x(data_class)
+    x, x_source, x_basis = policy.x_for(data_class)
     y, y_source = mosca.default_y(
         asset.asset_type.value, asset.location_class, tag.surface if tag else None
     )
@@ -227,7 +227,7 @@ def classify_asset(asset: Asset, policy: Policy,
         hndl_flag=hndl_flag,
         regulatory_flags=flags + cls.advisories,
         nist_quantum_security_level=cls.nist_quantum_security_level,
-        x_years=x, x_source=x_source,
+        x_years=x, x_source=x_source, x_basis=x_basis,
         y_years=y, y_source=y_source,
         z_year_used=policy.z_year, z_years=z_years,
         exposure_gap=round(exposure_gap, 2),

@@ -344,6 +344,90 @@ prefix without requiring the rest to be a version. Both are fixed and both have 
 
 ---
 
+## The PKI, and what a broken CA takes down with it
+
+A leaf certificate is a fast migration: re-issue it and deploy. A **certificate
+authority** is not — its public key is pinned in trust stores, baked into firmware and
+distributed to every relying party, so replacing it is a redistribution exercise. CA
+certificates therefore carry the long migration estimate and leaves keep the short one.
+Telling a PKI owner those are equally easy would be the most misleading thing this tool
+could do.
+
+```bash
+cbom-compass scan ./repo --policy crypto-policy.yaml   # certificates are a source type
+```
+
+Certificates on disk are parsed properly — subject, issuer, key algorithm and size,
+validity, basic constraints, subject and authority key identifiers — then linked
+child-to-issuer to rebuild the chain, preferring the authority key identifier over an
+issuer-name match. **Blast radius** is the transitive count beneath each certificate,
+and it is the number that orders the work: re-issuing a leaf under a root you have not
+replaced yet buys nothing.
+
+```
+0.70 blast=0  RSA-1024             CA  Acme Legacy Root CA 2009   signed with SHA-1
+0.49 blast=3  RSA-4096             CA  Acme Root CA
+0.49 blast=2  RSA-2048             CA  Acme Issuing CA
+0.42 blast=0  ECDSA-256-secp256r1  lf  payments.acme.example
+```
+
+The parser is stdlib-only (`cbom_compass/x509.py`). Pulling in a crypto library would
+have put RSA and ECDSA into our own CBOM, and a post-quantum readiness tool whose
+self-scan comes back dirty is a bad look no explanation recovers. It replaced code that
+searched raw DER for OID byte strings and guessed key size from file length — which
+could not read a subject, so there was no chain.
+
+Blast radius is reported but deliberately **not** folded into the score. Criticality is
+a human input here; silently promoting a CA because it signs a lot would be the
+confident guess the scoring model refuses to make everywhere else.
+
+Nothing verifies a signature or checks revocation. Saying "this chain is valid" while
+doing neither would be worse than staying quiet.
+
+---
+
+## Where X comes from
+
+X — how long data must stay confidential — is the input everything else multiplies
+through, and the one thing no scanner can discover. Our defaults are generic guesses
+("financial, so 7 years"). An organisation under a retention regime does not have to
+guess, because the obligation already states the answer.
+
+A policy can define its own data classes and say where each number came from:
+
+```yaml
+data_classes:
+  aadhaar-linked:
+    years: 25
+    source: >-
+      Aadhaar Act 2016 and UIDAI regulations. An Aadhaar number is a lifetime
+      identifier, so data linked to one must stay confidential past any Q-Day.
+  operational:
+    years: 3
+    note: No external obligation — an internal judgement.
+```
+
+`source` names an instrument and marks the figure **regulated**; `note` is internal
+judgement and stays **tagged**. Claiming regulatory backing for a number somebody picked
+is the one kind of dishonesty that split exists to prevent — and there is a test for it.
+
+The effect on the same RSA-2048 key in `src/aadhaar/ekyc.py`:
+
+| Policy | X | provenance | score |
+|---|---:|---|---:|
+| defaults | 7 y | assumed | 0.42 |
+| [`policies/india-regulated.yaml`](policies/india-regulated.yaml) | 25 y | **regulated** | **1.00** |
+
+The citation travels with the score into the report and the dashboard, so the number is
+defensible to the regulator that set it rather than to whoever wrote the scanner.
+
+That template covers Aadhaar, RBI KYC, Companies Act books of account, SEBI, DoT CDR
+retention, income tax, health records and classified defence records. **It is a starting
+point, not legal advice** — the file says so at the top, and every period needs
+confirming with counsel before a score built on it goes in front of a board.
+
+---
+
 ## Gating a pull request
 
 An inventory becomes useful when it turns into a control. `gate` compares a

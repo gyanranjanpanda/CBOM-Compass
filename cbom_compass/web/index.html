@@ -39,6 +39,8 @@ main{padding:18px;max-width:1560px;margin:0 auto}
 .view{display:none} .view.on{display:block}
 h2{font-size:13px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-dim);margin:0 0 10px;font-weight:600}
 .sub{color:var(--ink-faint);font-size:12px;margin:-6px 0 14px}
+.basis{color:var(--ink-faint);font-size:10.5px;margin-top:3px;line-height:1.35}
+.badge.regulated{background:#13403a;color:#5fe0c6;border-color:#1d6155}
 .stalebar{display:flex;align-items:center;gap:12px;padding:9px 30px;font-size:12px;
   color:#f0d7a8;background:#2a1f08;border-bottom:1px solid #6b4a08}
 .stalebar[hidden]{display:none}
@@ -998,7 +1000,7 @@ function explain(a){
               :`No exposure window under this Z — ${Math.abs(m.exposure_gap).toFixed(1)}y of slack.`}</div>
   </div>
   <dl class="kv">
-    <dt>X data lifetime</dt><dd>${m.x} y <span class="badge ${m.x_source}">${m.x_source}</span></dd>
+    <dt>X data lifetime</dt><dd>${m.x} y <span class="badge ${m.x_source}">${m.x_source}</span>${m.x_basis?`<div class="basis">${esc(m.x_basis)}</div>`:''}</dd>
     <dt>Y migration time</dt><dd>${m.y} y <span class="badge ${m.y_source==='tagged'?'tagged':'assumed'}">${m.y_source}</span></dd>
     <dt>Z quantum arrival</dt><dd>${m.z_year} → ${m.z_years} y <span class="badge assumed">your estimate</span></dd>
     <dt>criticality</dt><dd>${a.criticality} (weight ${m.criticality_weight})</dd>
@@ -1025,6 +1027,7 @@ score = ${m.risk.toFixed(3)} × ${m.criticality_weight} = <span class="hl">${a.s
         slider and watch it change.`:
       `nothing — no axis scored above zero, so this asset needs no action.`}
   </div>
+  ${m.x_source==='regulated'?`<div class="note"><b>X comes from a retention obligation.</b> ${esc(m.x_basis||'')} — this figure is defensible to the regulator that set it, not just to us.</div>`:''}
   ${m.x_source==='assumed'?`<div class="note"><b>X is an assumption here.</b> No scanner can know how long
    this data must stay confidential. Tag the owning service in <code>crypto-policy.yaml</code> to replace
    the default with a real figure.</div>`:''}

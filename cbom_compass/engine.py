@@ -13,9 +13,11 @@ from datetime import datetime, timezone
 
 from . import cbom, recommend, risk
 from .inventory import Inventory, merge
+from .scanners.certificates import blast_radius
 from .models import Asset, Recommendation, RiskClassification, ScanRun, to_dict
 from .policy import Policy
-from .scanners import (BinaryScanner, CloudScanner, ConfigScanner,
+from .scanners import (BinaryScanner, CertificateScanner, CloudScanner,
+                       ConfigScanner,
                        ContainerScanner, DependencyScanner, SourceScanner,
                        SSHScanner, TLSScanner)
 from .scanners.base import ScanError, ScanResult
@@ -23,6 +25,7 @@ from .scanners.base import ScanError, ScanResult
 SCANNERS = {
     "source": SourceScanner,
     "config": ConfigScanner,
+    "certificates": CertificateScanner,
     "dependencies": DependencyScanner,
     "binary": BinaryScanner,
     "container": ContainerScanner,
@@ -31,7 +34,7 @@ SCANNERS = {
     "cloud": CloudScanner,
 }
 # Scanners that take a filesystem path vs. a network/image target.
-PATH_SCANNERS = {"source", "config", "dependencies", "binary"}
+PATH_SCANNERS = {"source", "config", "certificates", "dependencies", "binary"}
 
 
 @dataclass
@@ -43,6 +46,22 @@ class ScanReport:
     policy: Policy
     raw_asset_count: int = 0
     errors: list[ScanError] = field(default_factory=list)
+
+    @property
+    def blast(self) -> dict[str, int]:
+        """How many certificates each certificate transitively vouches for.
+
+        Deliberately *not* folded into the score. Criticality is a human input
+        in this tool — "business context cannot be read out of code" — and
+        silently promoting a CA because it signs a lot would be exactly the kind
+        of confident guess the scoring model refuses to make elsewhere. It
+        breaks ties in the priority list and it is shown, so a PKI owner can set
+        the criticality themselves with the number in front of them.
+        """
+        if not hasattr(self, "_blast"):
+            self._blast = blast_radius(self.inventory.assets,
+                                       self.inventory.relationships)
+        return self._blast
 
     # ------------------------------------------------------------ summaries
     def kpis(self) -> dict:
@@ -75,6 +94,10 @@ class ScanReport:
             "nist_deprecated_2030": deprecated_2030,
             "nist_disallowed_2035": disallowed_2035,
             "relationships": len(self.inventory.relationships),
+            "certificate_authorities": sum(
+                1 for a in self.inventory.assets
+                if a.location_class == "certificate-authority"),
+            "widest_blast_radius": max(self.blast.values(), default=0),
             "z_year": self.policy.z_year,
             "sources_covered": self.run.sources_covered,
             "errors": len(self.errors),
@@ -91,6 +114,7 @@ class ScanReport:
             (self.row(a) for a in self.inventory.assets),
             key=lambda r: (
                 -r["score"],
+                -r["blast_radius"],
                 -(r["mosca"]["exposure_gap"] if r["mosca"] else 0),
                 -confidence_rank.get(r["confidence"], 0),
                 -len(r["evidence"]),
@@ -118,6 +142,7 @@ class ScanReport:
             "confidence": asset.confidence.value,
             "evidence": [to_dict(e) for e in asset.evidence],
             "certificate": asset.certificate,
+            "blast_radius": self.blast.get(asset.id, 0),
             "quantum_status": r.quantum_status.value if r else "unknown",
             "rationale": r.rationale if r else "",
             "hndl": r.hndl_flag if r else False,
@@ -126,7 +151,7 @@ class ScanReport:
             "urgency_band": r.urgency_band if r else "low",
             "score": r.score if r else 0.0,
             "mosca": {
-                "x": r.x_years, "x_source": r.x_source,
+                "x": r.x_years, "x_source": r.x_source, "x_basis": r.x_basis,
                 "y": r.y_years, "y_source": r.y_source,
                 "z_year": r.z_year_used, "z_years": r.z_years,
                 "exposure_gap": r.exposure_gap, "overdue": r.overdue,

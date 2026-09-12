@@ -76,6 +76,14 @@ LOCATION_SURFACE = {
     "key-store": "internal-service",
     "hardware-module": "embedded",
     "config": "internal-service",
+    # A leaf certificate is re-issued and deployed. A certificate *authority*
+    # has its public key pinned in trust stores, baked into firmware and
+    # distributed to every relying party, so replacing it is a redistribution
+    # exercise, not a deployment. Saying a root CA is as easy to replace as a
+    # web server certificate is the most misleading thing this tool could tell
+    # a PKI owner.
+    "certificate-store": "internal-service",
+    "certificate-authority": "embedded",
 }
 
 
