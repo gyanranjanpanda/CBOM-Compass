@@ -21,21 +21,9 @@ Open http://127.0.0.1:8000 and you land on **New scan**. Drop a `.zip` of your
 codebase onto the page, or type a public repository URL — `github.com/psf/requests` —
 and the inventory, risk heat map, recommendations and CycloneDX 1.7 export are
 built from it. No terminal needed after the server is up.
+### Run a scan
 
 ```bash
-./demo.sh          # or: seed two scans from real upstream repos and open the dashboard
-```
-
-That seeds two scans so the drift view has real content, starts a local TLS
-endpoint for the live-endpoint scanner, writes `demo-cbom.json` and
-`demo-risk-summary.pdf`, and serves the dashboard on http://127.0.0.1:8000.
-`./demo.sh --no-serve` does everything except the dashboard.
-
-Manually:
-
-```bash
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-
 # scan the bundled sample environment
 .venv/bin/python -m cbom_compass.cli scan samples/vulnerable-app \
     --policy samples/vulnerable-app/crypto-policy.yaml \
@@ -44,6 +32,7 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 # open the dashboard
 .venv/bin/python -m cbom_compass.cli serve --policy samples/vulnerable-app/crypto-policy.yaml
 ```
+
 
 There are no hard external tool dependencies. `syft` is used for container SBOMs when it is on
 `PATH` and substituted for with a built-in layer walk when it is not, so a demo machine without it
