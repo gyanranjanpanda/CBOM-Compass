@@ -15,3 +15,8 @@ services:
       # pyproject requires >=3.11; lief and reportlab both ship wheels for it.
       - key: PYTHON_VERSION
         value: "3.11.13"
+      # The served policy. Without it the dashboard scores against built-in
+      # defaults: every asset lands on the default criticality, so the heat map
+      # collapses into one row and the Z slider moves nothing.
+      - key: CBOM_POLICY
+        value: crypto-policy.yaml

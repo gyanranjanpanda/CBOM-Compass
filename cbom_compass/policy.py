@@ -8,6 +8,7 @@ way code is, rather than trapped in a database.
 from __future__ import annotations
 
 import fnmatch
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -81,6 +82,15 @@ class Policy:
 
     @classmethod
     def load(cls, path: str | Path | None) -> "Policy":
+        # A hosted deployment has no command line to pass `--policy` on — the
+        # start command is configuration held by the platform, not something a
+        # risk owner edits. CBOM_POLICY lets the deployment name its policy file
+        # the same way it names everything else. An explicit path still wins,
+        # and nothing is picked up implicitly from the working directory: an
+        # untagged scan should say so rather than silently adopt whichever
+        # policy happened to be lying next to it.
+        if not path:
+            path = os.environ.get("CBOM_POLICY")
         if not path:
             return cls()
         p = Path(path)

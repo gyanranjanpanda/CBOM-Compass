@@ -12,12 +12,18 @@
 set -euo pipefail
 
 ESTATE=estate
-PROJECTS=(
-  "paramiko           https://github.com/paramiko/paramiko.git"
+POLICY=crypto-policy.yaml
+FIRST=paramiko
+REST=(
   "node-jsonwebtoken  https://github.com/auth0/node-jsonwebtoken.git"
   "golang-crypto      https://github.com/golang/crypto.git"
   "jjwt               https://github.com/jwtk/jjwt.git"
 )
+
+clone() {
+  echo "==> cloning $1"
+  git clone --depth 1 --single-branch --no-tags --quiet "$2" "$ESTATE/$1"
+}
 
 pip install --upgrade pip
 pip install -e .
@@ -28,16 +34,22 @@ rm -f cbom-compass.db cbom-compass.db-wal cbom-compass.db-shm
 rm -rf "$ESTATE"
 mkdir -p "$ESTATE"
 
-for entry in "${PROJECTS[@]}"; do
-  read -r name url <<<"$entry"
-  echo "==> cloning $name"
-  git clone --depth 1 --single-branch --no-tags --quiet "$url" "$ESTATE/$name"
-done
-
-# Two scans, so the drift view opens on a real diff rather than an empty state:
-# one project onboarded, then the rest of the estate added.
+# Both scans take `estate` itself as the single scan root, never the project
+# directories individually. Locations are recorded relative to the root, so
+# scanning the projects separately would strip the project name off every
+# finding — `acme/acme_test.go` rather than `golang-crypto/acme/acme_test.go` —
+# and the `paths:` globs in the policy would match nothing, leaving every asset
+# on the default criticality and the heat map collapsed into a single row.
+clone "$FIRST" https://github.com/paramiko/paramiko.git
 echo "==> scan 1 of 2 — first project onboarded"
-cbom-compass scan "$ESTATE/paramiko" --limit 8
+cbom-compass scan "$ESTATE" --policy "$POLICY" --limit 8
 
+# Two scans rather than one, so the drift view opens on a real diff. Growing the
+# estate between them keeps every path stable across both, which is what makes
+# the diff read as "these assets are new" instead of "everything moved".
+for entry in "${REST[@]}"; do
+  read -r name url <<<"$entry"
+  clone "$name" "$url"
+done
 echo "==> scan 2 of 2 — full estate"
-cbom-compass scan "$ESTATE"/* --limit 12
+cbom-compass scan "$ESTATE" --policy "$POLICY" --limit 12
