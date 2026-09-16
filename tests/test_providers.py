@@ -59,6 +59,10 @@ def test_modules_are_attributed(call, suffix, expected):
     # OpenSSL's allocator is not libsodium, and a bare `crypto_` prefix would
     # have claimed it. An unattributed row is the correct answer.
     ("CRYPTO_malloc", ".c"),
+    # Qualified, but by the receiver rather than by a module.
+    ("self.cipher.encrypt", ".py"),
+    ("cls._digest", ".py"),
+    ("this.crypto.subtle.digest", ".js"),
 ])
 def test_unattributable_calls_are_left_alone(call, suffix):
     """A wrong edge in a blast-radius view is worse than a missing one."""

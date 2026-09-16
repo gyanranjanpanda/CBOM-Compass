@@ -393,6 +393,10 @@ C_PREFIX_PROVIDERS = (
 )
 JS_SUFFIXES = {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"}
 C_SUFFIXES = {".c", ".h", ".cc", ".cpp", ".hpp", ".cxx"}
+# `self.cipher.encrypt()` is qualified, but by the receiver rather than by a
+# module: attributing it to "self" puts a node in the graph that names nothing
+# a reader could go and open.
+NOT_A_MODULE = {"self", "cls", "super", "this", "window", "globalThis"}
 
 
 def provider_for(name: str, suffix: str) -> str | None:
@@ -434,7 +438,7 @@ def provider_for(name: str, suffix: str) -> str | None:
         return f"crypto/{package}" if package in GO_STDLIB_CRYPTO else package
 
     if suffix == ".py" or suffix in JS_SUFFIXES:
-        return segments[0]
+        return None if segments[0] in NOT_A_MODULE else segments[0]
 
     return None
 
