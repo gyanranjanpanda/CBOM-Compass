@@ -1,11 +1,7 @@
 # CBOM Compass on Render.
 #
-# The store is SQLite on the instance filesystem, which Render resets to its
-# post-build state on every deploy and every free-plan spin-up. That is why the
-# demo estate is seeded in `buildCommand` rather than at startup: the dashboard
-# then opens on the same two scans every time, and a cold start costs no extra
-# work. Scans a visitor runs live in the dashboard survive until the next
-# restart — attach a disk (paid plans only) if they need to outlive it.
+# `buildCommand` is a single script so that changing what the deployed estate
+# contains is a repository change, not a dashboard edit.
 services:
   - type: web
     name: cbom-compass
@@ -13,11 +9,8 @@ services:
     plan: free
     region: singapore
     healthCheckPath: /api/health
-    buildCommand: |
-      pip install --upgrade pip
-      pip install -e .
-      cbom-compass demo --no-serve --reset
-    startCommand: cbom-compass serve --host 0.0.0.0 --port $PORT --policy samples/vulnerable-app/crypto-policy.yaml
+    buildCommand: ./render-build.sh
+    startCommand: cbom-compass serve --host 0.0.0.0 --port $PORT
     envVars:
       # pyproject requires >=3.11; lief and reportlab both ship wheels for it.
       - key: PYTHON_VERSION
