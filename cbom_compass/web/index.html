@@ -446,8 +446,7 @@ input::placeholder{font-family:var(--sans);letter-spacing:0}
     <p class="sub" id="ns-what"></p>
     <div class="card" style="max-width:70ch">
       <h3>Start here</h3>
-      <p class="hint">Every view fills in from a single scan. Upload an archive of your
-      codebase, or give a public repository URL.</p>
+      <p class="hint">Every view fills in from a single scan.</p>
       <button class="btn primary" id="ns-go">Scan a codebase</button>
     </div>
   </section>
@@ -455,19 +454,17 @@ input::placeholder{font-family:var(--sans);letter-spacing:0}
   <!-- NEW SCAN -->
   <section class="view" id="v-scan">
     <h2>Scan a codebase</h2>
-    <p class="sub">Upload an archive or point at a public repository. Files are read, never
-    executed, and nothing leaves this server.</p>
+    <p class="sub">Files are read, never executed, and nothing leaves this server.</p>
 
     <div class="grid2">
       <div class="card">
         <h3>Upload</h3>
-        <p class="hint">A .zip or .tar.gz of your project, or a single source file.</p>
         <div id="drop" class="drop" tabindex="0" role="button"
              aria-label="Choose a file to scan, or drop one here">
           <div class="drop-mark">&#8681;</div>
           <p class="drop-lead">Drop a file here</p>
           <p class="drop-sub">or <span class="drop-link">choose one</span> &mdash; zip, tar.gz,
-             or a single .py / .js / .java / .go file</p>
+             or a single source file</p>
         </div>
         <input type="file" id="fileinput" hidden
                accept=".zip,.tar,.gz,.tgz,.bz2,.xz,.jar,.whl,.py,.js,.ts,.java,.go,.txt,.json,.xml,.yaml,.yml,.lock,.toml">
@@ -476,8 +473,7 @@ input::placeholder{font-family:var(--sans);letter-spacing:0}
 
       <div class="card">
         <h3>Public repository</h3>
-        <p class="hint">Shallow clone of the default branch. Public repositories only &mdash;
-        no credentials are accepted.</p>
+        <p class="hint">Public repositories only &mdash; no credentials are accepted.</p>
         <div class="repo-row">
           <input type="text" id="repourl" placeholder="github.com/psf/requests"
                  autocomplete="off" spellcheck="false" aria-label="Repository URL">
@@ -493,25 +489,22 @@ input::placeholder{font-family:var(--sans);letter-spacing:0}
   <section class="view on" id="v-overview">
     <div class="hero">
       <h1>Cryptographic posture</h1>
-      <p>What this scan found, and what has to move first.</p>
     </div>
     <div id="kpis" class="kpis"></div>
     <div id="errs" class="errs"></div>
     <div class="grid2">
       <div class="card">
         <h3>Risk heat map</h3>
-        <p class="hint">Criticality × urgency. Click a cell to filter the inventory.</p>
+        <p class="hint">Criticality × urgency.</p>
         <div id="heat-mini"></div>
       </div>
       <div class="card">
         <h3>Most urgent</h3>
-        <p class="hint">Click any score to see the Mosca inputs behind it.</p>
         <div class="tablewrap"><table id="top10"></table></div>
       </div>
     </div>
     <div class="card" style="margin-top:16px">
       <h3>Drift since last scan</h3>
-      <p class="hint">Re-scans are diffed, not re-listed.</p>
       <div id="drift"></div>
     </div>
   </section>
@@ -519,7 +512,7 @@ input::placeholder{font-family:var(--sans);letter-spacing:0}
   <!-- INVENTORY -->
   <section class="view" id="v-inventory">
     <h2>Inventory explorer</h2>
-    <p class="sub">Every discovered cryptographic asset, de-duplicated across sources. Click a row for evidence.</p>
+    <p class="sub">De-duplicated across every source scanned.</p>
     <div class="filters">
       <input type="search" id="q" placeholder="search algorithm, location, library…">
       <select id="f-status"><option value="">all statuses</option></select>
@@ -536,7 +529,6 @@ input::placeholder{font-family:var(--sans);letter-spacing:0}
   <!-- HEAT -->
   <section class="view" id="v-heat">
     <h2>Risk heat map</h2>
-    <p class="sub">Move the Z slider above and the grid recomputes.</p>
     <div class="grid2">
       <div class="card"><div id="heat-full"></div></div>
       <div class="card">
@@ -554,13 +546,11 @@ timing        = max(urgency, compliance, <span class="hl">FLOOR</span>)
                 × (0.6 + 0.4 × hndl)
 <span class="hl">score</span>         = risk × criticality_weight</div>
         <div class="note" id="zpin"></div>
-        <div class="note"><b>Why multiply rather than take a max?</b> Scanning paramiko,
-        an earlier version scored its already-migrated <b>ML-KEM key exchange at 0.60</b>
-        — purely because SSH session keys protect long-lived access. Nothing needed
-        migrating, so no timeline should have made it urgent. Vulnerability now gates
-        everything: adequate algorithms score zero whatever their data lifetime.</div>
-        <div class="note"><b>Why the floor?</b> 3DES protecting session data is still worth
-        replacing, so timing never drops to zero and weak cryptography always registers.</div>
+        <div class="note"><b>Vulnerability gates everything.</b> An earlier version scored
+        paramiko's already-migrated <b>ML-KEM key exchange at 0.60</b>, on data lifetime alone.
+        Adequate algorithms now score zero whatever their X.</div>
+        <div class="note"><b>The floor.</b> Timing never reaches zero, so weak cryptography
+        still registers when no deadline is near.</div>
       </div>
     </div>
   </section>
@@ -568,7 +558,7 @@ timing        = max(urgency, compliance, <span class="hl">FLOOR</span>)
   <!-- GRAPH -->
   <section class="view" id="v-graph">
     <h2>Asset graph</h2>
-    <p class="sub">Blast radius: what a break here cascades to. Drag to pan, scroll to zoom, click a node for detail.</p>
+    <p class="sub">Blast radius: what a break here cascades to.</p>
     <canvas id="graph"></canvas>
     <div class="legend">
       <span><i class="dot" style="background:var(--broken)"></i> broken</span>
@@ -583,7 +573,6 @@ timing        = max(urgency, compliance, <span class="hl">FLOOR</span>)
   <!-- RECOMMENDATIONS -->
   <section class="view" id="v-recs">
     <h2>Recommendations</h2>
-    <p class="sub">Prioritized migration actions for the assets that need attention first.</p>
     <div class="filters">
       <select id="r-filter">
         <option value="action">needs action</option>
@@ -598,11 +587,9 @@ timing        = max(urgency, compliance, <span class="hl">FLOOR</span>)
   <!-- REPORTS -->
   <section class="view" id="v-reports">
     <h2>Reports and export</h2>
-    <p class="sub">Export the current security posture for review, remediation, or compliance.</p>
     <div class="grid2">
       <div class="card">
         <h3>Export</h3>
-        <p class="hint">Current filter scope is applied.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
           <button class="btn primary" id="dl-cbom">CycloneDX 1.7 CBOM</button>
           <button class="btn" id="dl-pdf">PDF risk summary</button>
@@ -612,7 +599,6 @@ timing        = max(urgency, compliance, <span class="hl">FLOOR</span>)
       </div>
       <div class="card">
         <h3>Standard conformance</h3>
-        <p class="hint">Validated against the fields and enumerations CycloneDX 1.7 requires.</p>
         <div id="validation"></div>
       </div>
     </div>
@@ -825,9 +811,7 @@ function scanRepo(url){
 
 (function wireIntake(){
   const drop=$('#drop'), input=$('#fileinput');
-  $('#uplimits').textContent=
-    `Up to ${UPLOAD_LIMIT_MB} MB per upload. Archives are expanded with symlinks removed and `+
-    `entries that point outside the archive refused.`;
+  $('#uplimits').textContent = `Up to ${UPLOAD_LIMIT_MB} MB per upload.`;
   drop.onclick=()=>input.click();
   drop.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();input.click()} };
   input.onchange=()=>{ uploadFile(input.files[0]); input.value=''; };
