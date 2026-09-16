@@ -95,6 +95,12 @@ class Asset:
     parameters: dict[str, Any] = field(default_factory=dict)
     library: str | None = None
     library_version: str | None = None
+    # The module this call site reaches cryptography through — `crypto/ecdsa`,
+    # `hashlib`, `javax.crypto`. Deliberately separate from `library`, which
+    # changes how an asset is de-duplicated: setting `library` on a call site
+    # would drop location from its identity key and collapse every RSA call in a
+    # repository into one row. This is attribution, not identity.
+    provider: str | None = None
     location_class: str = "unknown"     # call-site | config | linked-library | negotiated |
                                         # manifest | image-layer | key-store | hardware-module
     primitive: str | None = None        # signature | kem | hash | block-cipher | ...
@@ -181,6 +187,7 @@ class Asset:
             parameters=row.get("parameters") or {},
             library=row.get("library"),
             library_version=row.get("library_version"),
+            provider=row.get("provider"),
             location_class=row.get("location_class", "unknown"),
             certificate=row.get("certificate"),
             service=row.get("service"),

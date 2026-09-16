@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 from . import cbom, recommend, risk
 from .inventory import Inventory, merge
 from .scanners.certificates import blast_radius
-from .models import Asset, Recommendation, RiskClassification, ScanRun, to_dict
+from .models import (Asset, AssetType, Confidence, Evidence, Recommendation,
+                     Relationship, RiskClassification, ScanRun, SourceType, to_dict)
 from .policy import Policy
 from .scanners import (BinaryScanner, CertificateScanner, CloudScanner,
                        ConfigScanner,
@@ -135,6 +136,7 @@ class ScanReport:
             "parameters": asset.parameters,
             "library": asset.library,
             "library_version": asset.library_version,
+            "provider": asset.provider,
             "location": asset.primary_location,
             "location_class": asset.location_class,
             "source_types": asset.source_types,
@@ -187,6 +189,52 @@ class ScanReport:
         }
 
 
+def attribute_providers(combined: ScanResult) -> None:
+    """Link call sites to the module they reach cryptography through.
+
+    Relationships are what the asset graph draws, and they only ever came from
+    certificate chains, negotiated protocols, container layers and dependency
+    manifests. A scan of a code repository produces none of those, so the graph
+    was a field of disconnected points: accurate, and useless. A call site does
+    know one real thing about its surroundings — which module it called into —
+    and `crypto/ecdsa` with twelve ECDSA findings hanging off it is a blast
+    radius a reader can act on.
+
+    A library already named by a manifest is reused rather than duplicated, so a
+    dependency that is both declared and called stays one asset carrying both
+    kinds of evidence instead of two rows that disagree about the same library.
+    """
+    existing: dict[str, Asset] = {}
+    for asset in combined.assets:
+        if asset.library and asset.asset_type == AssetType.RELATED_CRYPTO_MATERIAL:
+            existing.setdefault(asset.library.lower(), asset)
+
+    by_provider: dict[str, list[Asset]] = {}
+    for asset in combined.assets:
+        if asset.provider:
+            by_provider.setdefault(asset.provider, []).append(asset)
+
+    for provider, users in sorted(by_provider.items()):
+        entry = existing.get(provider.lower())
+        if entry is None:
+            entry = Asset(
+                algorithm=provider,
+                asset_type=AssetType.RELATED_CRYPTO_MATERIAL,
+                library=provider,
+                location_class="linked-library",
+                evidence=[Evidence(
+                    SourceType.SOURCE_CODE, "import-attribution",
+                    users[0].primary_location, Confidence.HIGH,
+                    f"{len(users)} call site(s) reach cryptography through {provider}",
+                )],
+            )
+            combined.assets.append(entry)
+            existing[provider.lower()] = entry
+        for user in users:
+            combined.relationships.append(
+                Relationship(user.id, entry.id, "depends-on"))
+
+
 def run_scan(targets: dict[str, list[str]], policy: Policy | None = None,
              initiated_by: str = "cli", label: str = "") -> ScanReport:
     """targets maps scanner name -> list of targets, e.g. {"source": ["./repo"]}.
@@ -219,6 +267,10 @@ def run_scan(targets: dict[str, list[str]], policy: Policy | None = None,
             produced = True
         if produced:
             covered.append(name)
+
+    # Before the merge, so the library rows it creates are de-duplicated against
+    # manifest rows for the same library and its edges are remapped with the rest.
+    attribute_providers(combined)
 
     raw_count = len(combined.assets)
     inventory = merge(combined.assets, combined.relationships)

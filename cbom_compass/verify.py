@@ -201,6 +201,31 @@ def _check_keystore(asset: dict, path: Path) -> Check:
                  entry.get("KeySpec") if entry else None)
 
 
+def _check_provider(asset: dict, path: Path) -> Check:
+    """Re-read a module attribution from the file that imports it.
+
+    A provider row is inferred from call sites rather than observed directly, so
+    it cannot be confirmed the way an algorithm at a line can. What is on disk is
+    the import: a Go file attributed to `crypto/ecdsa` contains that import path
+    literally, a Python file attributed to `hashlib` names it, and mbedtls spells
+    itself across every call. Confirming against the import is a real check — it
+    fails for a module the file never brings in.
+    """
+    text = path.read_text(encoding="utf-8", errors="replace")
+    module = (asset.get("library") or asset.get("algorithm") or "")
+    # `crypto/ecdsa` is imported by its full path; the trailing segment is what
+    # the call site then uses, and either spelling is proof the module is here.
+    candidates = [module] + ([module.rsplit("/", 1)[-1]] if "/" in module else [])
+    candidates = [c for c in candidates if c]
+    hit = any(re.search(re.escape(c), text, re.IGNORECASE) for c in candidates)
+    return Check(
+        asset["name"], asset["location"], asset["detection_methods"][0],
+        asset["confidence"], "confirmed" if hit else "unconfirmed",
+        str(path), f"module {module} imported by {path.name}" if hit else
+        f"module {module} not named in {path.name}",
+    )
+
+
 def verify(report: dict, roots: list[str], sample: int | None = 12,
            seed: int | None = None) -> list[Check]:
     """Re-derive a sample of findings from the artefacts on disk."""
@@ -240,7 +265,10 @@ def verify(report: dict, roots: list[str], sample: int | None = 12,
                                 "unavailable", "artefact not found on disk"))
             continue
         try:
-            if source == "source_code":
+            if (asset.get("location_class") == "linked-library"
+                    and "import-attribution" in (asset.get("detection_methods") or [])):
+                checks.append(_check_provider(asset, path))
+            elif source == "source_code":
                 checks.append(_check_source(asset, path, lineno))
             elif source == "configuration":
                 checks.append(_check_config(asset, path, lineno))

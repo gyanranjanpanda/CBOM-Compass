@@ -349,6 +349,96 @@ PQC_FAMILY = {
 }
 
 
+# --- provider attribution --------------------------------------------------
+#
+# Which module a call site reaches cryptography through. This is the only thing
+# a source finding knows about its surroundings that is a real relationship, and
+# without it the asset graph has nothing to draw for a code repository: no
+# certificate chain, no negotiated protocol, no container layer.
+#
+# Attribution is deliberately conservative. An unqualified call that resolves to
+# no import is left unattributed rather than guessed at, because a wrong edge in
+# a blast-radius view is worse than a missing one.
+
+GO_STDLIB_CRYPTO = {
+    "aes", "cipher", "des", "dsa", "ecdh", "ecdsa", "ed25519", "elliptic", "hmac",
+    "md5", "rand", "rc4", "rsa", "sha1", "sha256", "sha512", "subtle", "tls", "x509",
+}
+# Java names the class at the call site, not the package it lives in.
+JAVA_PROVIDER_CLASSES = {
+    "Cipher": "javax.crypto", "Mac": "javax.crypto", "KeyGenerator": "javax.crypto",
+    "KeyAgreement": "javax.crypto", "SecretKeyFactory": "javax.crypto",
+    "SecretKeySpec": "javax.crypto.spec", "IvParameterSpec": "javax.crypto.spec",
+    "GCMParameterSpec": "javax.crypto.spec",
+    "MessageDigest": "java.security", "Signature": "java.security",
+    "KeyPairGenerator": "java.security", "KeyFactory": "java.security",
+    "SecureRandom": "java.security", "KeyStore": "java.security",
+}
+# C has no namespaces, so the library shows up as a function-name prefix.
+# Matched case-insensitively, because the same library is spelled both ways:
+# mbedtls exposes `mbedtls_rsa_init` and the macro `MBEDTLS_ECP_DP_SECP256R1`.
+# libsodium is matched on its full API prefixes rather than a bare `crypto_`,
+# which would swallow OpenSSL's `CRYPTO_*` functions and attribute them to the
+# wrong library. Longest prefix first, so `ECDSA_` is not read as `EC_`.
+C_PREFIX_PROVIDERS = (
+    ("MBEDTLS_", "mbedtls"),
+    ("SODIUM_", "libsodium"), ("CRYPTO_BOX", "libsodium"), ("CRYPTO_SIGN", "libsodium"),
+    ("CRYPTO_SECRETBOX", "libsodium"), ("CRYPTO_AEAD", "libsodium"),
+    ("CRYPTO_GENERICHASH", "libsodium"), ("CRYPTO_KX", "libsodium"),
+    ("BCRYPT", "windows-cng"), ("NCRYPT", "windows-cng"), ("CC_", "commoncrypto"),
+    ("EVP_", "openssl"), ("ECDSA_", "openssl"), ("RSA_", "openssl"), ("DSA_", "openssl"),
+    ("DH_", "openssl"), ("EC_", "openssl"), ("HMAC", "openssl"),
+    ("SHA1", "openssl"), ("SHA256", "openssl"), ("MD5", "openssl"),
+    ("AES_", "openssl"), ("DES_", "openssl"),
+)
+JS_SUFFIXES = {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"}
+C_SUFFIXES = {".c", ".h", ".cc", ".cpp", ".hpp", ".cxx"}
+
+
+def provider_for(name: str, suffix: str) -> str | None:
+    """The module a call site reaches cryptography through, or None.
+
+    `name` is the qualified call as the scanner resolved it — for Python that is
+    the dotted path after import aliases are expanded, so `from hashlib import
+    sha256` followed by a bare `sha256(blob)` still attributes to `hashlib`.
+    """
+    head = (name or "").split("(")[0].strip()
+    if not head:
+        return None
+    segments = [s for s in head.split(".") if s]
+
+    if suffix == ".java":
+        for segment in segments:
+            if segment in JAVA_PROVIDER_CLASSES:
+                return JAVA_PROVIDER_CLASSES[segment]
+        return None
+
+    if suffix in C_SUFFIXES:
+        upper = head.upper()
+        for prefix, provider in C_PREFIX_PROVIDERS:
+            if upper.startswith(prefix):
+                return provider
+        return None
+
+    if suffix == ".cs":
+        return "System.Security.Cryptography" if segments else None
+
+    # A single segment is a bare call with nothing to attribute it to.
+    if len(segments) < 2:
+        return None
+
+    if suffix == ".go":
+        package = segments[0]
+        # Rendering the standard library under its real import path is what
+        # makes the node recognisable: `crypto/ecdsa`, not `ecdsa`.
+        return f"crypto/{package}" if package in GO_STDLIB_CRYPTO else package
+
+    if suffix == ".py" or suffix in JS_SUFFIXES:
+        return segments[0]
+
+    return None
+
+
 def detect_pqc(name: str) -> tuple[str, dict] | None:
     """Recognise a post-quantum algorithm from an API name, with its parameter set."""
     # `mlkem.MLKEM768PrivateKey` matches twice: the lowercase module prefix
@@ -698,7 +788,7 @@ class SourceScanner(Scanner):
         aliases = _import_aliases(tree)
         constants = module_constants(tree, aliases)
         modes_by_line: dict[int, str] = {}
-        pending: list[tuple[int, str, dict, Confidence, dict]] = []
+        pending: list[tuple[int, str, dict, Confidence, dict, str]] = []
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -727,7 +817,7 @@ class SourceScanner(Scanner):
                     if from_literal:
                         algorithm, pqc_params = from_literal
                 pending.append((node.lineno, algorithm, dict(pqc_params),
-                                Confidence.HIGH, detail))
+                                Confidence.HIGH, detail, name))
                 continue
             algorithm, params = PY_CALL_RULES[match]
             params = dict(params)
@@ -764,9 +854,9 @@ class SourceScanner(Scanner):
                                   else Confidence.MEDIUM)
             pending.append((node.lineno, algorithm,
                             {**params, **({"key_size": key_size} if key_size else {})},
-                            confidence, detail))
+                            confidence, detail, name))
 
-        for lineno, algorithm, params, confidence, detail in pending:
+        for lineno, algorithm, params, confidence, detail, callee in pending:
             key_size = params.pop("key_size", None)
             for offset in (0, -1, 1, -2, 2):
                 if lineno + offset in modes_by_line:
@@ -775,7 +865,8 @@ class SourceScanner(Scanner):
             loc = f"{path.relative_to(root) if root != path else path}:{lineno}"
             snippet = lines[lineno - 1].strip() if 0 < lineno <= len(lines) else None
             result.assets.append(self._asset(algorithm, key_size, params, loc, snippet,
-                                             "python-ast", confidence, detail))
+                                             "python-ast", confidence, detail,
+                                             provider_for(callee, ".py")))
         return result
 
     @staticmethod
@@ -921,7 +1012,8 @@ class SourceScanner(Scanner):
                 snippet = lines[lineno - 1].strip() if 0 < lineno <= len(lines) else None
                 found.append((lineno, self._asset(
                     algorithm, key_size, params, loc, snippet,
-                    f"pattern-{path.suffix.lstrip('.')}", Confidence.MEDIUM)))
+                    f"pattern-{path.suffix.lstrip('.')}", Confidence.MEDIUM,
+                    provider=provider_for(match.group(0), path.suffix))))
         result.assets.extend(subsume_bare(found))
         return result
 
@@ -939,13 +1031,15 @@ class SourceScanner(Scanner):
 
     def _asset(self, algorithm: str, key_size: int | None, params: dict,
                location: str, snippet: str | None, method: str,
-               confidence: Confidence, detail: dict | None = None) -> Asset:
+               confidence: Confidence, detail: dict | None = None,
+               provider: str | None = None) -> Asset:
         from ..knowledge.algorithms import normalise
         return Asset(
             algorithm=normalise(algorithm),
             asset_type=AssetType.ALGORITHM,
             key_size=key_size,
             parameters=params,
+            provider=provider,
             location_class="call-site",
             evidence=[Evidence(self.source_type, method, location, confidence,
                                snippet, detail or {})],
